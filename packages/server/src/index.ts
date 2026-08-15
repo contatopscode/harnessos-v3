@@ -1,5 +1,5 @@
 /**
- * Remote Coding Agent - Main Entry Point
+ * HarnessOS - Remote Coding Agent Platform
  * Multi-platform AI coding assistant (Telegram, Discord, Slack, GitHub, Gitea)
  */
 
@@ -98,6 +98,7 @@ import {
   assertEncryptionKeyAtBoot,
   assertProviderKeysKeyAtBoot,
   getDecryptedAccessToken,
+  bootstrapBundledAgents,
   type GitHubAuth,
   type IGitHubAppAuthProvider,
 } from '@archon/core';
@@ -317,6 +318,27 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
 
   // Start cleanup scheduler
   startCleanupScheduler();
+
+  // Seed bundled agents (code-reviewer, test-writer, bug-investigator,
+  // general-assistant) into remote_agent_agents. Idempotent — safe to call on
+  // every boot. Errors are logged but never throw: the server must keep running
+  // even if the agent table is briefly unavailable.
+  try {
+    const bootstrap = await bootstrapBundledAgents();
+    getLog().info(
+      {
+        inserted: bootstrap.inserted.length,
+        refreshed: bootstrap.refreshed.length,
+        errors: bootstrap.errors.length,
+      },
+      'agents.bootstrap.done'
+    );
+  } catch (err) {
+    getLog().error(
+      { err: err as Error },
+      'agents.bootstrap.failed — bundled agents will not be available until next boot'
+    );
+  }
 
   // Note: orphaned-run cleanup intentionally NOT called at server startup.
   // Running it here killed parallel workflow runs from other processes

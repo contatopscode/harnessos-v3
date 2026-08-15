@@ -48,6 +48,10 @@ export const mockPostgresDialect: SqlDialect = {
   nowMinusDays(paramIndex: number): string {
     return `NOW() - ($${String(paramIndex)} || ' days')::INTERVAL`;
   },
+
+  nowMinusHours(paramIndex: number): string {
+    return `NOW() - ($${String(paramIndex)} || ' hours')::INTERVAL`;
+  },
   daysSince(column: string): string {
     return `EXTRACT(EPOCH FROM (NOW() - ${column})) / 86400`;
   },

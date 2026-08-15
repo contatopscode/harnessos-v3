@@ -48,3 +48,31 @@ export type {
   ListDashboardRunsOptions,
   DashboardRunsResult,
 } from './workflow-run';
+
+// Agent
+export {
+  agentSlugSchema,
+  agentSourceSchema,
+  routingDecisionSchema,
+  agentDefinitionSchema,
+  agentRowSchema,
+  agentRunRowSchema,
+  routingInputSchema,
+  routingResultSchema,
+  discoveredAgentSchema,
+  listAgentsOptionsSchema,
+  listAgentsResultSchema,
+} from './agent';
+export type {
+  AgentSlug,
+  AgentSource,
+  RoutingDecision,
+  AgentDefinition,
+  Agent,
+  AgentRun,
+  RoutingInput,
+  RoutingResult,
+  DiscoveredAgent,
+  ListAgentsOptions,
+  ListAgentsResult,
+} from './agent';

@@ -560,3 +560,69 @@ CREATE TABLE IF NOT EXISTS remote_agent_auth_verification (
   "createdAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL,
   "updatedAt" timestamptz DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
+
+-- ============================================================================
+-- Agent system: installed agents + routing audit (migration 024)
+-- ============================================================================
+--
+-- Two tables backing the Agent persona layer.
+--   remote_agent_agents      — every agent visible to the user (bundled + local
+--                              + installed from future registry). Slug is unique.
+--   remote_agent_agent_runs  — one row per routing decision. Append-only audit
+--                              that answers "why did this go to <agent>?" later.
+--
+-- agent_slug in agent_runs is intentionally NOT a FK — we still want to log
+-- runs for slugs that have since been uninstalled (same posture as
+-- remote_agent_workflow_events.workflow_name).
+
+CREATE TABLE IF NOT EXISTS remote_agent_agents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug VARCHAR(64) NOT NULL,
+  name VARCHAR(128) NOT NULL,
+  source VARCHAR(16) NOT NULL CHECK (source IN ('bundled', 'local', 'installed')),
+  version VARCHAR(32) NOT NULL DEFAULT '1.0.0',
+  description TEXT NOT NULL,
+  system_prompt TEXT NOT NULL,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  keywords_json TEXT NOT NULL DEFAULT '[]',
+  examples_json TEXT NOT NULL DEFAULT '[]',
+  allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+  model VARCHAR(255),
+  memory_ref VARCHAR(128),
+  author VARCHAR(128),
+  definition_yaml TEXT NOT NULL,
+  definition_json TEXT NOT NULL,
+  installed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(slug)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agents_source
+  ON remote_agent_agents(source);
+
+CREATE TABLE IF NOT EXISTS remote_agent_agent_runs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  agent_slug VARCHAR(64) NOT NULL,
+  conversation_id UUID,
+  message_id UUID,
+  decision VARCHAR(32) NOT NULL CHECK (decision IN (
+    'override', 'codebase_default', 'auto_heuristic', 'auto_llm', 'default_fallback'
+  )),
+  confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+  reason TEXT NOT NULL,
+  latency_ms INTEGER NOT NULL CHECK (latency_ms >= 0),
+  user_message_preview TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at
+  ON remote_agent_agent_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_slug
+  ON remote_agent_agent_runs(agent_slug, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation
+  ON remote_agent_agent_runs(conversation_id) WHERE conversation_id IS NOT NULL;
+
+COMMENT ON TABLE remote_agent_agents IS
+  'Installed agents (bundled + local + installed from future registry). Slug is unique. JSON-as-TEXT fields are parsed in the store layer.';
+COMMENT ON TABLE remote_agent_agent_runs IS
+  'Append-only audit of every routing decision. Answers "why did this go to <agent>?" after the fact. agent_slug is not a FK so uninstalled agents still appear in history.';

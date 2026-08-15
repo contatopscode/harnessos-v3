@@ -261,3 +261,30 @@ export { getPort } from './utils/port-allocation';
 
 // Worktree sync
 export { syncArchonToWorktree } from './utils/worktree-sync';
+
+// =============================================================================
+// Agents (persona + routing)
+// =============================================================================
+export {
+  loadAllAgents,
+  loadBundledAgents,
+  loadGlobalAgents,
+  loadLocalAgents,
+  loadAgentFromFile,
+  parseAgentYaml,
+  setBundledDirForTests,
+  fsReadFile as fsReadAgentFile,
+  fsReaddir as fsReaddirAgents,
+  fsStat as fsStatAgent,
+  routeMessage,
+  parseAgentOverride,
+  bootstrapBundledAgents,
+} from './agents';
+export type {
+  LoadedAgent,
+  AgentLoadError,
+  AgentOverride,
+  AgentLoadResult,
+  LlmClassifier,
+  BootstrapResult,
+} from './agents';

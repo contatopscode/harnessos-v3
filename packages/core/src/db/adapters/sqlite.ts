@@ -640,6 +640,57 @@ export class SqliteAdapter implements IDatabase {
       -- the comment in migrateColumns() for why this is order-sensitive.
       CREATE INDEX IF NOT EXISTS idx_user_identities_user_id
         ON remote_agent_user_identities(user_id);
+
+      -- Agent system: installed agents + routing audit (migration 024).
+      -- Mirrors the 000_combined.sql definitions in SQLite-flavoured form
+      -- (lower(hex(randomblob(16))) for UUIDs, TEXT instead of JSONB / TZ).
+      -- agent_slug in agent_runs is intentionally NOT a FK so uninstalled
+      -- agents still appear in history (same posture as workflow_events).
+      CREATE TABLE IF NOT EXISTS remote_agent_agents (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        slug TEXT NOT NULL,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('bundled', 'local', 'installed')),
+        version TEXT NOT NULL DEFAULT '1.0.0',
+        description TEXT NOT NULL,
+        system_prompt TEXT NOT NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        keywords_json TEXT NOT NULL DEFAULT '[]',
+        examples_json TEXT NOT NULL DEFAULT '[]',
+        allowed_tools_json TEXT NOT NULL DEFAULT '[]',
+        model TEXT,
+        memory_ref TEXT,
+        author TEXT,
+        definition_yaml TEXT NOT NULL,
+        definition_json TEXT NOT NULL,
+        installed_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(slug)
+      );
+
+      CREATE TABLE IF NOT EXISTS remote_agent_agent_runs (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        agent_slug TEXT NOT NULL,
+        conversation_id TEXT,
+        message_id TEXT,
+        decision TEXT NOT NULL CHECK (decision IN (
+          'override', 'codebase_default', 'auto_heuristic', 'auto_llm', 'default_fallback'
+        )),
+        confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+        reason TEXT NOT NULL,
+        latency_ms INTEGER NOT NULL CHECK (latency_ms >= 0),
+        user_message_preview TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_agents_source
+        ON remote_agent_agents(source);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_created_at
+        ON remote_agent_agent_runs(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_agent_slug
+        ON remote_agent_agent_runs(agent_slug, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation
+        ON remote_agent_agent_runs(conversation_id) WHERE conversation_id IS NOT NULL;
     `);
     getLog().info('db.sqlite_schema_initialized');
   }
@@ -671,6 +722,10 @@ export const sqliteDialect: SqlDialect = {
 
   nowMinusDays(paramIndex: number): string {
     return `datetime('now', '-' || $${String(paramIndex)} || ' days')`;
+  },
+
+  nowMinusHours(paramIndex: number): string {
+    return `datetime('now', '-' || $${String(paramIndex)} || ' hours')`;
   },
 
   daysSince(column: string): string {

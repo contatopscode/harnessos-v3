@@ -107,6 +107,15 @@ export interface SqlDialect {
   nowMinusDays(paramIndex: number): string;
 
   /**
+   * SQL expression for interval subtraction from now in hours.
+   * Parallel to nowMinusDays — used by time-windowed counts (e.g. "agent
+   * runs in the last N hours"). Implemented per dialect because SQLite has
+   * no `INTERVAL` keyword; it must use datetime('now', '-' || N || ' hours').
+   * @param paramIndex - Parameter placeholder index for hours
+   */
+  nowMinusHours(paramIndex: number): string;
+
+  /**
    * SQL expression for days since timestamp
    * @param column - Timestamp column name
    */
