@@ -16,7 +16,6 @@ description: |
   The PIV loop comes AFTER a PRD exists. Each PIV loop focuses on ONE granular feature or bug fix.
   Input: A description of what to build, a path to an existing plan, or a GitHub issue number.
 
-provider: claude
 interactive: true
 
 nodes:
@@ -174,7 +173,7 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: create-plan
-    model: medium
+    model: large
     depends_on: [explore]
     context: fresh
     prompt: |
@@ -541,7 +540,7 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: code-review
-    model: medium
+    model: large
     depends_on: [implement]
     context: fresh
     prompt: |
@@ -701,7 +700,7 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: finalize
-    model: medium
+    model: large
     depends_on: [fix-feedback]
     context: fresh
     prompt: |

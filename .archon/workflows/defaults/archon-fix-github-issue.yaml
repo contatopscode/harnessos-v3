@@ -17,8 +17,7 @@ description: |
   8. Simplifies changed code (implements fixes directly, not just reports)
   9. Reports results back to the GitHub issue with follow-up suggestions
 
-provider: claude
-model: medium
+model: large
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

@@ -12,7 +12,6 @@ description: |
 
   Accepts: An idea description, a path to an existing prd.md, or a directory with prd.md + prd.json
 
-provider: claude
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

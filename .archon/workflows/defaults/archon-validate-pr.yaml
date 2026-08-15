@@ -10,7 +10,6 @@ description: |
   This workflow is designed for running in parallel — each instance finds its own free ports
   to avoid conflicts. Produces artifacts in $ARTIFACTS_DIR/ and posts a validation report.
 
-provider: claude
 model: large
 
 nodes:

@@ -15,7 +15,6 @@ description: |
   - PostToolUse hooks force type-check after every file change
   - Behavior verification confirms no logic changes after refactoring
 
-provider: claude
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

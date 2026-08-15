@@ -222,9 +222,31 @@ export class MessagePersistence {
       this.assistantBuffer.delete(conversationId);
     }
 
-    const dbId = this.dbIdMap.get(conversationId);
+    let dbId: string | undefined = this.dbIdMap.get(conversationId);
     if (!dbId) {
-      getLog().warn({ conversationId, segmentCount: ready.length }, 'assistant_persist_no_db_id');
+      // Lazy DB lookup — under concurrent messages the dbIdMap may not be
+      // populated yet (race between setConversationDbId in the POST handler
+      // and the first assistant chunk arriving). Fall back to a fresh DB
+      // query before dropping the segments. This was bug #2 from the smoke
+      // test (verifier 2026-08-13) — ~58% of concurrent responses were
+      // silently dropped because of this race.
+      try {
+        const { findConversationByPlatformId } = await import('@archon/core/db/conversations');
+        const conv = await findConversationByPlatformId(conversationId);
+        if (conv) {
+          this.dbIdMap.set(conversationId, conv.id);
+          dbId = conv.id;
+          getLog().debug({ conversationId, dbId: conv.id }, 'persistence_lazy_lookup_resolved');
+        } else {
+          getLog().warn({ conversationId, segmentCount: ready.length }, 'assistant_persist_no_db_id');
+        }
+      } catch (lookupErr: unknown) {
+        getLog().warn({ conversationId, err: lookupErr }, 'persistence_lazy_lookup_failed');
+        getLog().warn({ conversationId, segmentCount: ready.length }, 'assistant_persist_no_db_id');
+      }
+    }
+
+    if (!dbId) {
       // Restore buffer — dbId may arrive later (e.g., race with conversation creation).
       // Merge ready segments back with any that arrived since we split.
       const existing = this.assistantBuffer.get(conversationId);
@@ -236,6 +258,8 @@ export class MessagePersistence {
       }
       return;
     }
+
+    const finalDbId: string = dbId;
 
     // Finalize any remaining tool durations (last tool in each segment)
     const now = Date.now();
@@ -261,7 +285,7 @@ export class MessagePersistence {
           ...(seg.workflowDispatch ? { workflowDispatch: seg.workflowDispatch } : {}),
           ...(seg.workflowResult ? { workflowResult: seg.workflowResult } : {}),
         };
-        await addMessage(dbId, 'assistant', seg.content, metadata);
+        await addMessage(finalDbId, 'assistant', seg.content, metadata);
       }
     } catch (e: unknown) {
       getLog().error({ conversationId, err: e }, 'message_persistence_failed');

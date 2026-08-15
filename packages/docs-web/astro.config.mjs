@@ -6,13 +6,13 @@ export default defineConfig({
   site: 'https://archon.diy',
   integrations: [
     starlight({
-      title: 'Archon',
+      title: 'HarnessOS',
       favicon: '/favicon.png',
       logo: {
         src: './src/assets/logo.png',
-        alt: 'Archon',
+        alt: 'HarnessOS',
       },
-      description: 'AI workflow engine — package your coding workflows as YAML, run them anywhere.',
+      description: 'HarnessOS — AI workflow engine for coding agents. Package your workflows as YAML, run them anywhere.',
       head: [
         {
           tag: 'script',

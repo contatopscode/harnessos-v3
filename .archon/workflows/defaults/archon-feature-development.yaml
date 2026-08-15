@@ -8,7 +8,6 @@ description: |
 nodes:
   - id: implement
     command: archon-implement
-    provider: claude
     model: large
 
   - id: create-pr
