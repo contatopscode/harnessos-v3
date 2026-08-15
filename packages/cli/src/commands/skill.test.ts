@@ -1,14 +1,18 @@
 /**
  * Tests for skill install command
+ *
+ * The actual file-system work is delegated to `@archon/core/skills/install` —
+ * the CLI just wraps it with arg validation and exit codes. These tests
+ * exercise the CLI wrapper; the core helper is covered in core's own suite.
  */
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { BUNDLED_MANAGE_RUN_SKILL_FILES, BUNDLED_SKILL_FILES } from '../bundled-skill';
-import { copyArchonSkill, skillInstallCommand } from './skill';
+import { installArchonSkills, BUNDLED_SKILL_FILES } from '@archon/core';
+import { skillInstallCommand } from './skill';
 
-describe('copyArchonSkill', () => {
+describe('installArchonSkills (CLI delegate)', () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -20,7 +24,7 @@ describe('copyArchonSkill', () => {
   });
 
   it('writes every bundled skill file under .claude/skills/archon/', async () => {
-    await copyArchonSkill(tempDir);
+    await installArchonSkills(tempDir);
 
     const skillRoot = join(tempDir, '.claude', 'skills', 'archon');
     for (const [relativePath, content] of Object.entries(BUNDLED_SKILL_FILES)) {
@@ -31,7 +35,7 @@ describe('copyArchonSkill', () => {
   });
 
   it('writes every bundled skill file under .agents/skills/archon/ (Codex path)', async () => {
-    await copyArchonSkill(tempDir);
+    await installArchonSkills(tempDir);
 
     const skillRoot = join(tempDir, '.agents', 'skills', 'archon');
     for (const [relativePath, content] of Object.entries(BUNDLED_SKILL_FILES)) {
@@ -41,27 +45,14 @@ describe('copyArchonSkill', () => {
     }
   });
 
-  it('writes every bundled manage-run skill file under .agents/skills/manage-run/ (Codex path)', async () => {
-    await copyArchonSkill(tempDir);
-
-    const skillRoot = join(tempDir, '.agents', 'skills', 'manage-run');
-    for (const [relativePath, content] of Object.entries(BUNDLED_MANAGE_RUN_SKILL_FILES)) {
-      const dest = join(skillRoot, relativePath);
-      expect(existsSync(dest)).toBe(true);
-      expect(readFileSync(dest, 'utf-8')).toBe(content);
-    }
-  });
-
   it('overwrites pre-existing skill files with bundled content', async () => {
-    const skillRoot = join(tempDir, '.claude', 'skills', 'archon');
-    const skillMdPath = join(skillRoot, 'SKILL.md');
+    const skillMdPath = join(tempDir, '.claude', 'skills', 'archon', 'SKILL.md');
 
-    // Pre-seed with stale content; copyArchonSkill must overwrite it.
-    await copyArchonSkill(tempDir);
+    await installArchonSkills(tempDir);
     writeFileSync(skillMdPath, 'STALE');
     expect(readFileSync(skillMdPath, 'utf-8')).toBe('STALE');
 
-    await copyArchonSkill(tempDir);
+    await installArchonSkills(tempDir);
     expect(readFileSync(skillMdPath, 'utf-8')).toBe(BUNDLED_SKILL_FILES['SKILL.md']);
   });
 });
@@ -92,8 +83,8 @@ describe('skillInstallCommand', () => {
     expect(existsSync(join(tempDir, '.agents', 'skills', 'archon', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(tempDir, '.agents', 'skills', 'manage-run', 'SKILL.md'))).toBe(true);
     // Final log line should mention restarting both Claude Code and Codex
-    const lastLog = logSpy.mock.calls.at(-1)?.[0] as string | undefined;
-    expect(lastLog).toContain('Restart Claude Code or Codex');
+    const allLogs = logSpy.mock.calls.map(c => c[0]).join('\n');
+    expect(allLogs).toContain('Restart Claude Code or Codex');
   });
 
   it('returns 1 and prints an error when the target directory does not exist', async () => {

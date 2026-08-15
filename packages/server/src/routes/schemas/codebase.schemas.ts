@@ -75,3 +75,16 @@ export const codebaseEnvVarParamsSchema = z.object({
 export const envVarMutationResponseSchema = z
   .object({ success: z.boolean() })
   .openapi('EnvVarMutationResponse');
+
+/** POST /api/codebases/:id/skills response — installs the bundled archon + manage-run skills. */
+export const installSkillsResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    /** Absolute path of the project root the skills were written into. */
+    targetPath: z.string(),
+    /** The two roots the skills landed in (Claude Code + Codex). */
+    skillsRoots: z.array(z.string()),
+    /** File count written into each root (archon + manage-run). */
+    fileCount: z.number().int().min(0),
+  })
+  .openapi('InstallSkillsResponse');

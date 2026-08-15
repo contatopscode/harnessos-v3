@@ -57,6 +57,7 @@ import {
   setUserTiers,
   setUserAliases,
   setUserDefault,
+  installArchonSkills,
 } from '@archon/core';
 import type { UserTiersPatch, UserAliasesPatch, AliasesPatch } from '@archon/core';
 import { findRepoRoot, removeWorktree, toRepoPath, toWorktreePath } from '@archon/git';
@@ -161,6 +162,7 @@ import {
   envVarMutationResponseSchema,
   mkdirCodebaseBodySchema,
   mkdirCodebaseResponseSchema,
+  installSkillsResponseSchema,
 } from './schemas/codebase.schemas';
 import {
   agentSourceSchema,
@@ -703,6 +705,27 @@ const deleteEnvVarRoute = createRoute({
       description: 'Env var deleted',
     },
     404: jsonError('Codebase not found'),
+  },
+});
+
+const installSkillsRoute = createRoute({
+  method: 'post',
+  path: '/api/codebases/{id}/skills',
+  tags: ['Codebases'],
+  summary: 'Install the bundled Archon skills into the project directory',
+  description:
+    'Writes the bundled `archon` + `manage-run` skills into <project>/.claude/skills/ ' +
+    '(for Claude Code) AND <project>/.agents/skills/ (Codex project-level path). ' +
+    'Always overwrites existing files so the version shipped with the current ' +
+    'Archon binary is what runs.',
+  request: { params: codebaseIdParamsSchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: installSkillsResponseSchema } },
+      description: 'Skills installed',
+    },
+    404: jsonError('Codebase not found'),
+    500: jsonError('Server error'),
   },
 });
 
@@ -3256,6 +3279,37 @@ export function registerApiRoutes(
     } catch (error) {
       getLog().error({ err: error, codebaseId: id, key }, 'delete_env_var_failed');
       return apiError(c, 500, 'Failed to delete env var');
+    }
+  });
+
+  // POST /api/codebases/:id/skills - Install the bundled Archon skills
+  // (`archon` + `manage-run`) into the project directory. Powers the
+  // "Install skills" button in the Web UI's project menu — same code path
+  // the `archon skill install` CLI uses, so behavior is consistent.
+  registerOpenApiRoute(installSkillsRoute, async c => {
+    const id = c.req.param('id') ?? '';
+    try {
+      const codebase = await codebaseDb.getCodebase(id);
+      if (!codebase) return apiError(c, 404, 'Codebase not found');
+      const result = await installArchonSkills(codebase.default_cwd);
+      getLog().info(
+        { codebaseId: id, fileCount: result.fileCount, skillsRoots: result.skillsRoots },
+        'api.codebases.install_skills'
+      );
+      return c.json({
+        ok: true,
+        targetPath: result.targetPath,
+        skillsRoots: result.skillsRoots,
+        fileCount: result.fileCount,
+      });
+    } catch (error) {
+      getLog().error({ err: error, codebaseId: id }, 'install_skills_failed');
+      return apiError(
+        c,
+        500,
+        'Failed to install skills',
+        error instanceof Error ? error.message : 'unknown error'
+      );
     }
   });
 

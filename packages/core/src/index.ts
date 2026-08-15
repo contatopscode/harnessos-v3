@@ -347,3 +347,15 @@ export {
   persistMemorySignal,
   type MemorySignal,
 } from './agents/memory-integration';
+
+// Skills install — single source of truth for the "Install skills" UI button
+// in the Web UI, the `archon skill install` CLI command, and the
+// `archon setup` wizard. Writes the bundled archon + manage-run skills to
+// `<target>/.claude/skills/` (Claude Code) AND `<target>/.agents/skills/`
+// (Codex project-level path).
+export {
+  installArchonSkills,
+  BUNDLED_SKILL_FILES,
+  BUNDLED_MANAGE_RUN_SKILL_FILES,
+  type InstallResult,
+} from './skills';

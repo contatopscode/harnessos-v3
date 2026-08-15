@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router';
 import { Settings, Workflow, ArrowLeft, PenTool, Brain, type LucideIcon } from 'lucide-react';
 import { ProjectRow } from './ProjectRow';
 import { EnvVarsDialog } from './EnvVarsDialog';
+import { InstallSkillsDialog } from './InstallSkillsDialog';
 import { useEntity, invalidate } from '../store/cache';
 import { K } from '../store/keys';
 import * as skill from '../skills';
@@ -96,6 +97,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
   const location = useLocation();
   const scope = extractProjectId(location.pathname) ?? 'all';
   const [envProject, setEnvProject] = useState<Project | null>(null);
+  const [skillsProject, setSkillsProject] = useState<Project | null>(null);
   const [query, setQuery] = useState('');
   const [width, setWidth] = useState<number>(readRailWidth);
   const [resizing, setResizing] = useState(false);
@@ -275,6 +277,9 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
                 onEditEnv={() => {
                   setEnvProject(p);
                 }}
+                onInstallSkills={() => {
+                  setSkillsProject(p);
+                }}
               />
             ))}
           </div>
@@ -358,6 +363,12 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
         open={envProject !== null}
         onClose={() => {
           setEnvProject(null);
+        }}
+      />
+      <InstallSkillsDialog
+        project={skillsProject}
+        onClose={() => {
+          setSkillsProject(null);
         }}
       />
     </nav>

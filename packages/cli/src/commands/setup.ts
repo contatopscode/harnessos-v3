@@ -37,7 +37,7 @@ import {
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, chmodSync } from 'fs';
 import { parse as parseDotenv } from 'dotenv';
 import { join, dirname } from 'path';
-import { copyArchonSkill } from './skill';
+import { installArchonSkills } from '@archon/core';
 import { setInstallDefault } from './ai';
 import { homedir } from 'os';
 import { randomBytes } from 'crypto';
@@ -2294,7 +2294,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
 
     s.start('Installing Archon skill...');
     try {
-      await copyArchonSkill(skillTargetRaw);
+      await installArchonSkills(skillTargetRaw);
     } catch (err) {
       s.stop('Archon skill installation failed');
       cancel(`Could not install skill: ${(err as NodeJS.ErrnoException).message}`);

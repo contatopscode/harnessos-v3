@@ -20,5 +20,6 @@ export * from './providers';
 export * from './github';
 export * from './providerKeys';
 export * from './memory';
+export * from './skills';
 
 export { HttpError } from '../lib/http';

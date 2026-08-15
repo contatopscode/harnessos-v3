@@ -9,6 +9,7 @@ interface ProjectRowProps {
   onClick: () => void;
   onRemove?: () => void;
   onEditEnv?: () => void;
+  onInstallSkills?: () => void;
 }
 
 function KeyIcon({ size = 16 }: { size?: number }): ReactElement {
@@ -59,6 +60,26 @@ function TrashIcon({ size = 15 }: { size?: number }): ReactElement {
   );
 }
 
+function SparklesIcon({ size = 15 }: { size?: number }): ReactElement {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 3l1.7 4.6L18 9.3l-4.3 1.7L12 15l-1.7-4L6 9.3l4.3-1.7z" />
+      <path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z" />
+      <path d="M5 14l.6 1.7L7.5 16l-1.9.3L5 18l-.6-1.7L2.5 16l1.9-.3z" />
+    </svg>
+  );
+}
+
 /**
  * Rail row, design v2: monogram tile + repo-only title (the owner lives in
  * the group header above) + locator path + hover actions. Selection is the
@@ -71,6 +92,7 @@ export function ProjectRow({
   onClick,
   onRemove,
   onEditEnv,
+  onInstallSkills,
 }: ProjectRowProps): ReactElement {
   const displayName = useDisplayName(project.id, project.name);
   // Group headers already show the owner — strip it from the row label
@@ -267,11 +289,26 @@ export function ProjectRow({
                 onClick={e => {
                   e.stopPropagation();
                 }}
-                className="absolute right-0 top-full z-30 mt-1 min-w-[178px] rounded-[11px] border bg-surface-hover p-[5px] shadow-[0_18px_44px_-18px_rgba(0,0,0,0.85)]"
+                className="absolute right-0 top-full z-30 mt-1 min-w-[200px] rounded-[11px] border bg-surface-hover p-[5px] shadow-[0_18px_44px_-18px_rgba(0,0,0,0.85)]"
                 // Inline because the console scope's wildcard border-color
                 // rule repaints Tailwind border utilities (see theme.css).
                 style={{ borderColor: 'var(--border-bright)' }}
               >
+                {onInstallSkills !== undefined ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setMenuOpen(false);
+                      onInstallSkills();
+                    }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-[11px] py-[9px] text-left text-[13px] font-semibold text-text-primary transition-colors hover:bg-surface"
+                  >
+                    <SparklesIcon />
+                    Instalar skills
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   role="menuitem"
