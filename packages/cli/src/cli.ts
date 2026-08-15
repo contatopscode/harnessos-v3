@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Archon CLI - Run AI workflows from the command line
+ * HarnessOS CLI - Run AI workflows from the command line
  *
  * Usage:
  *   archon workflow list              List available workflows
@@ -65,6 +65,14 @@ import { continueCommand } from './commands/continue';
 import { chatCommand } from './commands/chat';
 import { setupCommand } from './commands/setup';
 import { skillInstallCommand } from './commands/skill';
+import {
+  agentListCommand,
+  agentShowCommand,
+  agentInstallCommand,
+  agentUninstallCommand,
+  agentRunCommand,
+  agentRunsCommand,
+} from './commands/agent';
 import { validateWorkflowsCommand, validateCommandsCommand } from './commands/validate';
 import { serveCommand } from './commands/serve';
 import { doctorCommand } from './commands/doctor';
@@ -130,6 +138,12 @@ Commands:
   complete <branch> [...]    Complete branch lifecycle (remove worktree + branches)
   serve                      Start the web UI server (downloads web UI on first run)
   skill install [path]       Install the bundled Archon skill into .claude/skills/archon
+  agent list                 List installed agents (bundled + local + installed)
+  agent show <slug>          Show one agent's full definition (system prompt, tools, examples)
+  agent install <path>       Install an agent from a YAML file
+  agent uninstall <slug>     Remove an installed agent (refuses bundled)
+  agent run <message>        Simulate routing a message and record the decision
+  agent runs                 Show recent agent routing decisions
   doctor [--full]            Verify your Archon setup (Claude/Codex binaries, gh auth, DB, adapters; --full also probes the OpenCode runtime SDK)
   auth github                Connect your GitHub identity via device flow (multi-user installs)
   ai key set <provider>      Connect an AI provider API key (multi-user installs; key read from prompt/stdin)
@@ -995,6 +1009,77 @@ async function main(): Promise<number> {
               console.error(`Unknown skill subcommand: ${subcommand}`);
             }
             console.error('Available: install');
+            return 1;
+        }
+      }
+
+      case 'agent': {
+        switch (subcommand) {
+          case 'list': {
+            const source = values.source as string | undefined;
+            const search = values.search as string | undefined;
+            const rawLimit = values.limit as string | undefined;
+            let limit: number | undefined;
+            if (rawLimit !== undefined) {
+              limit = Number(rawLimit);
+              if (!Number.isInteger(limit) || limit < 1) {
+                console.error(`Error: --limit must be a positive integer, got '${rawLimit}'.`);
+                return 1;
+              }
+            }
+            return await agentListCommand({ json: jsonFlag, source, search, limit });
+          }
+
+          case 'show': {
+            const slug = positionals[2];
+            return await agentShowCommand(slug, { json: jsonFlag });
+          }
+
+          case 'install': {
+            const path = positionals[2];
+            return await agentInstallCommand(path, { json: jsonFlag });
+          }
+
+          case 'uninstall': {
+            const slug = positionals[2];
+            return await agentUninstallCommand(slug, { json: jsonFlag });
+          }
+
+          case 'run': {
+            // Everything after the subcommand is the message (so users can pass
+            // long prompts without quoting gymnastics). Same shape as
+            // `archon workflow run <name> [msg]`.
+            const message = positionals.slice(2).join(' ').trim();
+            return await agentRunCommand(message, {
+              json: jsonFlag,
+              codebase: values.codebase as string | undefined,
+            });
+          }
+
+          case 'runs': {
+            const rawLimit = values.limit as string | undefined;
+            let limit: number | undefined;
+            if (rawLimit !== undefined) {
+              limit = Number(rawLimit);
+              if (!Number.isInteger(limit) || limit < 1) {
+                console.error(`Error: --limit must be a positive integer, got '${rawLimit}'.`);
+                return 1;
+              }
+            }
+            return await agentRunsCommand({
+              json: jsonFlag,
+              limit,
+              slug: values.slug as string | undefined,
+            });
+          }
+
+          default:
+            if (subcommand === undefined) {
+              console.error('Missing agent subcommand');
+            } else {
+              console.error(`Unknown agent subcommand: ${subcommand}`);
+            }
+            console.error('Available: list, show, install, uninstall, run, runs');
             return 1;
         }
       }

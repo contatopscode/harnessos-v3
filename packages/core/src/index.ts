@@ -52,6 +52,8 @@ export * as isolationEnvDb from './db/isolation-environments';
 export * as workflowDb from './db/workflows';
 export * as messageDb from './db/messages';
 export * as userDb from './db/users';
+export * as agentDb from './db/agents';
+export * as agentRunDb from './db/agent-runs';
 
 // Re-export SessionNotFoundError for error handling
 export { SessionNotFoundError } from './db/sessions';
@@ -256,6 +258,24 @@ export {
 // Path validation
 export { isPathWithinWorkspace, validateAndResolvePath } from './utils/path-validation';
 
+// Agent store (re-exported so the CLI and orchestrator can `import { ... } from '@archon/core'`
+// without reaching into `@archon/core/db/...` subpaths).
+export {
+  getAgentBySlug,
+  listAgents,
+  upsertAgent,
+  deleteAgentBySlug,
+  toAgentInsert,
+  type AgentInsert,
+} from './db/agents';
+export {
+  recordAgentRun,
+  listAgentRuns,
+  topRoutedAgents,
+  type AgentRunInsert,
+  type ListAgentRunsResult,
+} from './db/agent-runs';
+
 // Port allocation
 export { getPort } from './utils/port-allocation';
 
@@ -288,3 +308,13 @@ export type {
   LlmClassifier,
   BootstrapResult,
 } from './agents';
+
+// Agent schema types — re-exported so the CLI and orchestrator can pick up
+// `AgentSource` / `RoutingDecision` without reaching into `./schemas/agent`.
+export type {
+  AgentSource,
+  RoutingDecision,
+  RoutingResult,
+  RoutingInput,
+  AgentDefinition,
+} from './schemas/agent';
