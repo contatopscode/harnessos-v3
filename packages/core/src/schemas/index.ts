@@ -76,3 +76,25 @@ export type {
   ListAgentsOptions,
   ListAgentsResult,
 } from './agent';
+
+// Memory system (path B — Memory + RAG) — exported so the CLI, orchestrator
+// and Web UI can reference `Memory`, `MemoryKind`, etc. without reaching into
+// the schema subpath.
+export {
+  memorySchema,
+  memoryScopeSchema,
+  memoryKindSchema,
+  memorySourceSchema,
+  memoryInsertSchema,
+  recallMemoryRequestSchema,
+  listMemoriesQuerySchema,
+} from './memory';
+export type {
+  Memory,
+  MemoryScope,
+  MemoryKind,
+  MemorySource,
+  MemoryInsert,
+  RecallMemoryRequest,
+  ListMemoriesQuery,
+} from './memory';

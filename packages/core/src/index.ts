@@ -54,6 +54,7 @@ export * as messageDb from './db/messages';
 export * as userDb from './db/users';
 export * as agentDb from './db/agents';
 export * as agentRunDb from './db/agent-runs';
+export * as memoryDb from './db/memories';
 
 // Re-export SessionNotFoundError for error handling
 export { SessionNotFoundError } from './db/sessions';
@@ -275,6 +276,18 @@ export {
   type AgentRunInsert,
   type ListAgentRunsResult,
 } from './db/agent-runs';
+export {
+  addMemory,
+  deleteMemory,
+  listMemories,
+  recallMemories,
+  countMemoriesByKind,
+  type MemoryInsert,
+  type RecallOptions,
+  type RecallScope,
+  type ListMemoriesOptions,
+  type ListMemoriesResult,
+} from './db/memories';
 
 // Port allocation
 export { getPort } from './utils/port-allocation';

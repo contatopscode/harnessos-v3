@@ -691,6 +691,51 @@ export class SqliteAdapter implements IDatabase {
         ON remote_agent_agent_runs(agent_slug, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_agent_runs_conversation
         ON remote_agent_agent_runs(conversation_id) WHERE conversation_id IS NOT NULL;
+
+      -- Memory system (path B — Memory + RAG) [from migration 025].
+      -- Mirrors the Postgres 000_combined.sql definitions in SQLite-flavoured
+      -- form: TEXT for VARCHAR/TIMESTAMPTZ, lower(hex(randomblob(16))) for
+      -- gen_random_uuid(). FTS5 virtual table + triggers keep the full-text
+      -- index in sync with the base table.
+      CREATE TABLE IF NOT EXISTS remote_agent_memories (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        scope TEXT NOT NULL CHECK (scope IN ('user', 'agent', 'project', 'conversation')),
+        scope_id TEXT,
+        kind TEXT NOT NULL CHECK (kind IN ('preference', 'fact', 'project_context', 'feedback', 'note')),
+        content TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('chat', 'manual', 'imported')),
+        confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+        created_at TEXT DEFAULT (datetime('now')),
+        last_used_at TEXT,
+        use_count INTEGER NOT NULL DEFAULT 0 CHECK (use_count >= 0)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_memories_scope
+        ON remote_agent_memories(scope, scope_id);
+      CREATE INDEX IF NOT EXISTS idx_memories_kind
+        ON remote_agent_memories(kind);
+      CREATE INDEX IF NOT EXISTS idx_memories_created_at
+        ON remote_agent_memories(created_at DESC);
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS remote_agent_memories_fts USING fts5(
+        content,
+        content='remote_agent_memories',
+        content_rowid='rowid',
+        tokenize='porter unicode61 remove_diacritics 2'
+      );
+
+      CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON remote_agent_memories BEGIN
+        INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON remote_agent_memories BEGIN
+        INSERT INTO remote_agent_memories_fts(remote_agent_memories_fts, rowid, content)
+          VALUES('delete', old.rowid, old.content);
+      END;
+      CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON remote_agent_memories BEGIN
+        INSERT INTO remote_agent_memories_fts(remote_agent_memories_fts, rowid, content)
+          VALUES('delete', old.rowid, old.content);
+        INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
+      END;
     `);
     getLog().info('db.sqlite_schema_initialized');
   }

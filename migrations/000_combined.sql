@@ -626,3 +626,49 @@ COMMENT ON TABLE remote_agent_agents IS
   'Installed agents (bundled + local + installed from future registry). Slug is unique. JSON-as-TEXT fields are parsed in the store layer.';
 COMMENT ON TABLE remote_agent_agent_runs IS
   'Append-only audit of every routing decision. Answers "why did this go to <agent>?" after the fact. agent_slug is not a FK so uninstalled agents still appear in history.';
+
+-- ============================================================================
+-- Memory system (path B — Memory + RAG) [from migration 025]
+-- ============================================================================
+-- Append-only store of facts the agent should remember across sessions.
+-- Searchable via SQLite FTS5 (bundled in bun:sqlite, zero new infra).
+-- Scope model: 'user' (global) | 'agent' (per-persona) | 'project' (per-codebase)
+-- | 'conversation' (per-chat). A memory can match multiple scopes — the
+-- recall layer queries each scope and unions the top-N results.
+
+CREATE TABLE IF NOT EXISTS remote_agent_memories (
+  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  scope VARCHAR(16) NOT NULL CHECK (scope IN ('user', 'agent', 'project', 'conversation')),
+  scope_id TEXT,
+  kind VARCHAR(32) NOT NULL CHECK (kind IN ('preference', 'fact', 'project_context', 'feedback', 'note')),
+  content TEXT NOT NULL,
+  source VARCHAR(16) NOT NULL DEFAULT 'manual' CHECK (source IN ('chat', 'manual', 'imported')),
+  confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_used_at TEXT,
+  use_count INTEGER NOT NULL DEFAULT 0 CHECK (use_count >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_scope ON remote_agent_memories(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_memories_kind ON remote_agent_memories(kind);
+CREATE INDEX IF NOT EXISTS idx_memories_created_at ON remote_agent_memories(created_at DESC);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS remote_agent_memories_fts USING fts5(
+  content,
+  content='remote_agent_memories',
+  content_rowid='rowid',
+  tokenize='porter unicode61 remove_diacritics 2'
+);
+
+CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON remote_agent_memories BEGIN
+  INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON remote_agent_memories BEGIN
+  INSERT INTO remote_agent_memories_fts(remote_agent_memories_fts, rowid, content)
+    VALUES('delete', old.rowid, old.content);
+END;
+CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON remote_agent_memories BEGIN
+  INSERT INTO remote_agent_memories_fts(remote_agent_memories_fts, rowid, content)
+    VALUES('delete', old.rowid, old.content);
+  INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
+END;
