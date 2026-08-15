@@ -359,7 +359,7 @@ export function AddProjectDialog({
         {!isGit ? (
           <div className="mt-[11px] space-y-2 text-[12.5px] leading-relaxed text-text-tertiary">
             <p>
-              Archon will use this existing folder as the project source — nothing is copied or
+              HarnessOS will use this existing folder as the project source — nothing is copied or
               moved.
             </p>
             {!showCreate ? (
@@ -450,7 +450,7 @@ export function AddProjectDialog({
           </div>
         ) : (
           <p className="mt-[11px] text-[12.5px] leading-relaxed text-text-tertiary">
-            Archon will clone this repo to{' '}
+            HarnessOS will clone this repo to{' '}
             <code
               className="rounded border bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-text-secondary"
               style={{ borderColor: 'var(--border)' }}
