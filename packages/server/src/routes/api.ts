@@ -8,6 +8,7 @@ import { cors } from 'hono/cors';
 import type { WebAdapter } from '../adapters/web';
 import { rm, readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises';
 import { existsSync, readFileSync } from 'fs';
+import { mkdir as fsMkdir } from 'fs/promises';
 import { normalize, join, sep, basename, resolve } from 'path';
 import { randomUUID } from 'crypto';
 import type { Context } from 'hono';
@@ -158,6 +159,8 @@ import {
   setEnvVarBodySchema,
   codebaseEnvVarParamsSchema,
   envVarMutationResponseSchema,
+  mkdirCodebaseBodySchema,
+  mkdirCodebaseResponseSchema,
 } from './schemas/codebase.schemas';
 import {
   agentSourceSchema,
@@ -587,6 +590,34 @@ const addCodebaseRoute = createRoute({
       description: 'Codebase created',
     },
     400: jsonError('Bad request'),
+    500: jsonError('Server error'),
+  },
+});
+
+/**
+ * POST /api/codebases/mkdir — create a directory tree on the host filesystem
+ * so the user can spin up a fresh folder project from the AddProjectDialog
+ * without leaving the browser. The user supplies an absolute path; the
+ * server runs `mkdir -p`. The dialog then re-uses the returned path to
+ * register the folder as a project via POST /api/codebases.
+ */
+const mkdirCodebaseRoute = createRoute({
+  method: 'post',
+  path: '/api/codebases/mkdir',
+  tags: ['Codebases'],
+  summary: 'Create a directory on disk for a new folder project',
+  request: {
+    body: {
+      content: { 'application/json': { schema: mkdirCodebaseBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: mkdirCodebaseResponseSchema } },
+      description: 'Created',
+    },
+    400: jsonError('Bad request (path is unsafe or invalid)'),
     500: jsonError('Server error'),
   },
 });
@@ -2989,6 +3020,43 @@ export function registerApiRoutes(
         500,
         `Failed to add codebase: ${(error as Error).message ?? 'unknown error'}`
       );
+    }
+  });
+
+  // POST /api/codebases/mkdir — create a directory tree for a new folder project.
+  // The AddProjectDialog's "Create new folder" UI uses this, then re-uses the
+  // returned path to call POST /api/codebases (above) for the actual registration.
+  registerOpenApiRoute(mkdirCodebaseRoute, async c => {
+    const { path } = getValidatedBody(c, mkdirCodebaseBodySchema);
+    const target = resolve(path);
+
+    // Safety: refuse obviously dangerous targets. The server runs with the
+    // user's privileges so it can already write anywhere they can — this is
+    // a guardrail against typos and accidents, not a security boundary.
+    if (target === sep || target === '/' || /^[A-Z]:\\$/i.test(target)) {
+      return apiError(
+        c,
+        400,
+        'Unsafe path',
+        'Refusing to create a filesystem root. Pick a folder inside your home or workspace.'
+      );
+    }
+    if (target.includes(`${sep}System${sep}`) || /\\Windows\\?$/i.test(target)) {
+      return apiError(
+        c,
+        400,
+        'Unsafe path',
+        'Refusing to create a path under the OS system directory.'
+      );
+    }
+
+    try {
+      await fsMkdir(target, { recursive: true });
+      getLog().info({ path: target }, 'api.codebases.mkdir');
+      return c.json({ ok: true, path: target });
+    } catch (err) {
+      getLog().error({ err: err as Error, path: target }, 'api.codebases.mkdir_failed');
+      return apiError(c, 500, 'Failed to create directory', (err as Error).message);
     }
   });
 

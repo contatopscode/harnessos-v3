@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react';
 import * as skill from '../skills';
 import type { Project } from '../primitives/project';
 
@@ -10,7 +10,28 @@ interface AddProjectDialogProps {
 
 type Mode = 'url' | 'path';
 
-function GitHubIcon({ size = 15 }: { size?: number }): ReactElement {
+/** Detect support for the browser's native folder picker. Chrome/Edge 86+ only. */
+function hasNativeFolderPicker(): boolean {
+  return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
+}
+
+/** Strip the parent path from a full path (best-effort, OS-agnostic). */
+function parentDir(fullPath: string): string {
+  const sep = fullPath.includes('\\') && !fullPath.includes('/') ? '\\' : '/';
+  const idx = fullPath.lastIndexOf(sep);
+  if (idx <= 0) return fullPath;
+  return fullPath.slice(0, idx);
+}
+
+/** Join a parent + a single segment with the right separator. */
+function joinPath(parent: string, segment: string): string {
+  if (parent === '') return segment;
+  const sep = parent.includes('\\') && !parent.includes('/') ? '\\' : '/';
+  const tail = parent.endsWith(sep) || parent.endsWith('/') || parent.endsWith('\\') ? '' : sep;
+  return `${parent}${tail}${segment}`;
+}
+
+function GitHubIcon({ size = 15 }: { size?: 15 | 16 }): ReactElement {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden>
       <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.9 1.57 2.36 1.12 2.94.85.09-.66.35-1.12.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.36 9.36 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.8-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.6.69.49A10.06 10.06 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
@@ -18,7 +39,7 @@ function GitHubIcon({ size = 15 }: { size?: number }): ReactElement {
   );
 }
 
-function FolderIcon({ size = 15 }: { size?: number }): ReactElement {
+function FolderIcon({ size = 15 }: { size?: 15 | 16 }): ReactElement {
   return (
     <svg
       width={size}
@@ -36,7 +57,7 @@ function FolderIcon({ size = 15 }: { size?: number }): ReactElement {
   );
 }
 
-function LinkIcon({ size = 16 }: { size?: number }): ReactElement {
+function LinkIcon({ size = 16 }: { size?: 15 | 16 }): ReactElement {
   return (
     <svg
       width={size}
@@ -67,6 +88,15 @@ function parseGitHubUrl(value: string): { owner: string; repo: string } {
  * brand-gradient top accent, segmented GitHub/Local control with a sliding
  * indicator, 46px icon input with magenta focus ring, and a live clone-path
  * hint derived from the typed URL. Esc, ✕, Cancel, and the backdrop close it.
+ *
+ * "Local path" mode extra affordances:
+ *   - "Browse…" button: uses the browser's native folder picker (Chrome/Edge).
+ *     Note: the File System Access API returns a handle name, not the full
+ *     absolute path, so this only fills the last segment. The user still
+ *     needs the parent path from somewhere else (text input, history).
+ *   - "Create new folder" toggle: inline form (parent + name) → server
+ *     `mkdir -p` → fills the path input with the new full path. Works in
+ *     every browser, no native picker required.
  */
 export function AddProjectDialog({
   open,
@@ -77,6 +107,14 @@ export function AddProjectDialog({
   const [value, setValue] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Local-path helpers
+  const [showCreate, setShowCreate] = useState(false);
+  const [newParent, setNewParent] = useState('');
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const createNameRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -89,10 +127,21 @@ export function AddProjectDialog({
     };
   }, [open, onClose]);
 
+  // When the user types a full path, pre-fill the create-form parent.
+  // When the user opens the create form with nothing typed, default to home.
+  useEffect(() => {
+    if (!showCreate) return;
+    if (newParent !== '') return;
+    if (value.trim() !== '') {
+      setNewParent(parentDir(value.trim()));
+    }
+  }, [showCreate, value, newParent]);
+
   if (!open) return null;
 
   const isGit = mode === 'url';
   const { owner, repo } = parseGitHubUrl(value);
+  const canPickFolder = !isGit && hasNativeFolderPicker();
 
   const onSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
@@ -104,11 +153,86 @@ export function AddProjectDialog({
         : await skill.addProjectByPath(value.trim());
       onAdded(project);
       setValue('');
+      setNewParent('');
+      setNewName('');
+      setShowCreate(false);
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  /**
+   * Native folder picker (Chrome/Edge 86+). The API returns a
+   * FileSystemDirectoryHandle whose `.name` is just the folder name (not
+   * the absolute path — browsers won't expose that for security). We use
+   * the typed parent path + the picked name to build the full path.
+   */
+  const onBrowse = async (): Promise<void> => {
+    setError(null);
+    try {
+      // showDirectoryPicker may exist but not be callable (e.g. iframe without
+      // permission). Wrap in a function reference so TS doesn't complain.
+      const picker = window.showDirectoryPicker;
+      if (typeof picker !== 'function') {
+        setError('Native folder picker is not available in this browser. Type the path manually.');
+        return;
+      }
+      const handle = await picker({ mode: 'read' });
+      const baseParent = value.trim() !== '' ? parentDir(value.trim()) : '';
+      const next = baseParent !== '' ? joinPath(baseParent, handle.name) : handle.name;
+      setValue(next);
+    } catch (err) {
+      // User-cancelled (AbortError) — silent. Other errors: surface them.
+      if (err instanceof DOMException && err.name === 'AbortError') return;
+      setError(err instanceof Error ? err.message : 'Folder picker failed');
+    }
+  };
+
+  /**
+   * Inline "Create new folder" submit. Hits POST /api/codebases/mkdir,
+   * then pre-fills the main path input with the new full path so the
+   * user can immediately click "Add project" to register it.
+   */
+  const onCreateFolder = async (e: FormEvent): Promise<void> => {
+    e.preventDefault();
+    setCreateError(null);
+    const name = newName.trim();
+    if (name === '') {
+      setCreateError('Folder name is required');
+      createNameRef.current?.focus();
+      return;
+    }
+    const parent = newParent.trim();
+    if (parent === '') {
+      setCreateError('Parent path is required');
+      return;
+    }
+    const fullPath = joinPath(parent, name);
+    setCreating(true);
+    try {
+      const res = await fetch('/api/codebases/mkdir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: fullPath }),
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        const truncated = body.length > 200 ? body.slice(0, 200) + '...' : body;
+        throw new Error(`Server returned ${res.status}: ${truncated}`);
+      }
+      // Server returned { ok, path }; use the canonical resolved path
+      const data = (await res.json()) as { ok: boolean; path: string };
+      setValue(data.path);
+      setShowCreate(false);
+      setNewName('');
+      // Keep newParent in place so the user can create siblings quickly.
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : 'Failed to create folder');
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -215,26 +339,127 @@ export function AddProjectDialog({
             className="min-w-0 flex-1 bg-transparent font-mono text-[14px] text-text-primary outline-none placeholder:text-text-tertiary"
             disabled={submitting}
           />
+          {canPickFolder ? (
+            <button
+              type="button"
+              onClick={() => {
+                void onBrowse();
+              }}
+              disabled={submitting}
+              title="Open the native folder picker (Chrome / Edge only)"
+              className="rounded-md border px-2 py-1 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              Browse…
+            </button>
+          ) : null}
         </div>
-        <p className="mt-[11px] text-[12.5px] leading-relaxed text-text-tertiary">
-          {isGit ? (
-            <>
-              Archon will clone this repo to{' '}
-              <code
-                className="rounded border bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-text-secondary"
-                style={{ borderColor: 'var(--border)' }}
-              >
-                ~/.archon/workspaces/{owner}/{repo}/source
-              </code>
-              .
-            </>
-          ) : (
-            <>
+
+        {/* Hint + create-new-folder toggle (local-path mode only) */}
+        {!isGit ? (
+          <div className="mt-[11px] space-y-2 text-[12.5px] leading-relaxed text-text-tertiary">
+            <p>
               Archon will use this existing folder as the project source — nothing is copied or
               moved.
-            </>
-          )}
-        </p>
+            </p>
+            {!showCreate ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowCreate(true);
+                  setTimeout(() => createNameRef.current?.focus(), 50);
+                }}
+                className="inline-flex items-center gap-1.5 rounded border border-dashed px-2 py-1 text-[11.5px] font-semibold text-text-secondary transition-colors hover:border-solid hover:bg-surface-hover hover:text-text-primary"
+                style={{ borderColor: 'var(--border-bright)' }}
+              >
+                <span aria-hidden>+</span> Create new folder
+              </button>
+            ) : (
+              <div
+                className="rounded-[10px] border bg-surface p-3"
+                style={{ borderColor: 'var(--border-bright)' }}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
+                    New folder
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreate(false);
+                      setCreateError(null);
+                    }}
+                    className="text-[11px] text-text-tertiary hover:text-text-primary"
+                  >
+                    Cancel
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={newParent}
+                    onChange={e => {
+                      setNewParent(e.target.value);
+                    }}
+                    placeholder="Parent path — e.g. ~/projects or /Users/you/work"
+                    spellCheck={false}
+                    className="block w-full rounded-md border bg-surface-elevated px-2.5 py-1.5 font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
+                    style={{ borderColor: 'var(--border)' }}
+                    disabled={creating}
+                  />
+                  <div className="flex items-center gap-1.5 font-mono text-[12.5px] text-text-tertiary">
+                    <span aria-hidden>+</span>
+                    <input
+                      ref={createNameRef}
+                      type="text"
+                      value={newName}
+                      onChange={e => {
+                        setNewName(e.target.value);
+                      }}
+                      placeholder="folder-name"
+                      spellCheck={false}
+                      className="flex-1 rounded-md border bg-surface-elevated px-2.5 py-1.5 font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
+                      style={{ borderColor: 'var(--border)' }}
+                      disabled={creating}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void onCreateFolder(e as unknown as FormEvent);
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={e => {
+                        void onCreateFolder(e as unknown as FormEvent);
+                      }}
+                      disabled={creating || newName.trim() === ''}
+                      className="rounded-md bg-accent-primary px-2.5 py-1.5 text-[11.5px] font-bold text-on-accent disabled:opacity-50"
+                    >
+                      {creating ? 'Creating…' : 'Create'}
+                    </button>
+                  </div>
+                </div>
+                {createError !== null ? (
+                  <p className="mt-2 rounded border border-error/40 bg-error/10 px-2 py-1.5 font-mono text-[10.5px] text-error">
+                    {createError}
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="mt-[11px] text-[12.5px] leading-relaxed text-text-tertiary">
+            Archon will clone this repo to{' '}
+            <code
+              className="rounded border bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-text-secondary"
+              style={{ borderColor: 'var(--border)' }}
+            >
+              ~/.archon/workspaces/{owner}/{repo}/source
+            </code>
+            .
+          </p>
+        )}
 
         {error !== null ? (
           <p className="mt-3 rounded border border-error/40 bg-error/10 px-2 py-1.5 font-mono text-[11px] text-error">

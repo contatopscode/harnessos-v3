@@ -34,6 +34,22 @@ export const deleteCodebaseResponseSchema = z
   .object({ success: z.boolean() })
   .openapi('DeleteCodebaseResponse');
 
+/** POST /api/codebases/mkdir request body. Creates the directory tree on disk. */
+export const mkdirCodebaseBodySchema = z
+  .object({
+    path: z.string().min(1),
+  })
+  .strict()
+  .openapi('MkdirCodebaseBody');
+
+/** POST /api/codebases/mkdir response. */
+export const mkdirCodebaseResponseSchema = z
+  .object({
+    ok: z.boolean(),
+    path: z.string(),
+  })
+  .openapi('MkdirCodebaseResponse');
+
 /** Response for GET /api/codebases/:id/env — returns only keys, never values */
 export const codebaseEnvVarsResponseSchema = z
   .object({
