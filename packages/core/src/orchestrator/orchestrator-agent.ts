@@ -38,6 +38,11 @@ import {
   buildAgentPromptSection,
   type AgentResolution,
 } from '../agents/orchestrator-integration';
+import {
+  buildMemoryPromptSection,
+  detectMemorySignal,
+  persistMemorySignal,
+} from '../agents/memory-integration';
 import { recordAgentRun as recordAgentRunInDb } from '../db/agent-runs';
 import { executeWorkflow, hydrateResumableRun } from '@archon/workflows/executor';
 import {
@@ -1547,6 +1552,21 @@ export async function handleMessage(
     if (agentResolution !== null) {
       systemAppend += `\n\n${buildAgentPromptSection(agentResolution.agent)}`;
     }
+
+    // Inject recalled memories (path B — Memory + RAG). We search across
+    // user / agent / project / conversation scopes depending on what the
+    // chat is bound to. Best-effort: a recall failure logs and skips the
+    // section so the chat still works. The user's exact message is the
+    // FTS5 query so anything relevant they typed surfaces — this is
+    // what makes the agent feel like it "remembers" prior preferences.
+    const memorySection = await buildMemoryPromptSection(message, {
+      conversationId: conversation.id,
+      agentSlug: agentResolution?.agent.definition.slug ?? null,
+      codebaseId: conversation.codebase_id ?? null,
+    });
+    if (memorySection !== '') {
+      systemAppend += `\n\n${memorySection}`;
+    }
     // Capabilities are only consulted for project-scoped chats (both the native tool
     // and the CLI pointer are scoped features), so look them up lazily — this also
     // avoids a registry lookup (and a throw for an unregistered provider) on the
@@ -1738,6 +1758,27 @@ export async function handleMessage(
           'orchestrator.agent_run_record_failed'
         );
       }
+    }
+
+    // Persist explicit "remember this" memory signals (path B — Memory + RAG).
+    // Detection happens on the stripped message (the text the model saw, with
+    // any `agent:slug` override already removed) so a command-prefix never
+    // leaks into the saved content. Failure here is logged but never fails
+    // the chat turn — the user already got their answer.
+    try {
+      const memorySignal = detectMemorySignal(message);
+      if (memorySignal !== null) {
+        await persistMemorySignal(memorySignal, {
+          conversationId: conversation.id,
+          agentSlug: agentResolution?.agent.definition.slug ?? null,
+          codebaseId: conversation.codebase_id ?? null,
+        });
+      }
+    } catch (err) {
+      getLog().warn(
+        { err: err as Error, conversationId },
+        'orchestrator.memory_signal_detect_failed'
+      );
     }
 
     getLog().debug({ conversationId }, 'orchestrator_message_completed');

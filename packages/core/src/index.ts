@@ -288,6 +288,12 @@ export {
   type ListMemoriesOptions,
   type ListMemoriesResult,
 } from './db/memories';
+export {
+  type Memory,
+  type MemoryKind,
+  type MemoryScope,
+  type MemorySource,
+} from './schemas/memory';
 
 // Port allocation
 export { getPort } from './utils/port-allocation';
@@ -331,3 +337,13 @@ export type {
   RoutingInput,
   AgentDefinition,
 } from './schemas/agent';
+
+// Memory + RAG bridge helpers (path B — Memory + RAG). The orchestrator
+// imports them by relative path; re-exporting here lets the E2E and CLI
+// scripts reach the same code without re-implementing the signal regex.
+export {
+  buildMemoryPromptSection,
+  detectMemorySignal,
+  persistMemorySignal,
+  type MemorySignal,
+} from './agents/memory-integration';

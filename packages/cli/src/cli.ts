@@ -73,6 +73,12 @@ import {
   agentRunCommand,
   agentRunsCommand,
 } from './commands/agent';
+import {
+  memoryListCommand,
+  memoryAddCommand,
+  memorySearchCommand,
+  memoryForgetCommand,
+} from './commands/memory';
 import { validateWorkflowsCommand, validateCommandsCommand } from './commands/validate';
 import { serveCommand } from './commands/serve';
 import { doctorCommand } from './commands/doctor';
@@ -144,6 +150,10 @@ Commands:
   agent uninstall <slug>     Remove an installed agent (refuses bundled)
   agent run <message>        Simulate routing a message and record the decision
   agent runs                 Show recent agent routing decisions
+  memory list                List stored memories (filter by --scope and --kind)
+  memory add <content>       Add a memory (--scope --scope-id --kind --source)
+  memory search <query>      FTS5 search across user/agent/project/conversation scopes
+  memory forget <id>         Delete a memory by id (exit 2 when not found)
   doctor [--full]            Verify your Archon setup (Claude/Codex binaries, gh auth, DB, adapters; --full also probes the OpenCode runtime SDK)
   auth github                Connect your GitHub identity via device flow (multi-user installs)
   ai key set <provider>      Connect an AI provider API key (multi-user installs; key read from prompt/stdin)
@@ -1080,6 +1090,75 @@ async function main(): Promise<number> {
               console.error(`Unknown agent subcommand: ${subcommand}`);
             }
             console.error('Available: list, show, install, uninstall, run, runs');
+            return 1;
+        }
+      }
+
+      case 'memory': {
+        switch (subcommand) {
+          case 'list': {
+            const rawLimit = values.limit as string | undefined;
+            let limit: number | undefined;
+            if (rawLimit !== undefined) {
+              limit = Number(rawLimit);
+              if (!Number.isInteger(limit) || limit < 1) {
+                console.error(`Error: --limit must be a positive integer, got '${rawLimit}'.`);
+                return 1;
+              }
+            }
+            return await memoryListCommand({
+              json: jsonFlag,
+              scope: values.scope as string | undefined,
+              kind: values.kind as string | undefined,
+              limit,
+            });
+          }
+
+          case 'add': {
+            // Content may contain spaces and quoted phrases; join everything
+            // after the subcommand so users can pass long notes without
+            // quoting gymnastics. Same shape as `agent run` / `workflow run`.
+            const content = positionals.slice(2).join(' ').trim();
+            return await memoryAddCommand(content, {
+              json: jsonFlag,
+              scope: values.scope as string | undefined,
+              scopeId: (values['scope-id'] as string | undefined) ?? undefined,
+              kind: values.kind as string | undefined,
+              source: values.source as string | undefined,
+            });
+          }
+
+          case 'search': {
+            const query = positionals.slice(2).join(' ').trim();
+            const rawLimit = values.limit as string | undefined;
+            let limit: number | undefined;
+            if (rawLimit !== undefined) {
+              limit = Number(rawLimit);
+              if (!Number.isInteger(limit) || limit < 1) {
+                console.error(`Error: --limit must be a positive integer, got '${rawLimit}'.`);
+                return 1;
+              }
+            }
+            return await memorySearchCommand(query, {
+              json: jsonFlag,
+              scope: values.scope as string | undefined,
+              kind: values.kind as string | undefined,
+              limit,
+            });
+          }
+
+          case 'forget': {
+            const id = positionals[2];
+            return await memoryForgetCommand(id);
+          }
+
+          default:
+            if (subcommand === undefined) {
+              console.error('Missing memory subcommand');
+            } else {
+              console.error(`Unknown memory subcommand: ${subcommand}`);
+            }
+            console.error('Available: list, add, search, forget');
             return 1;
         }
       }
