@@ -350,6 +350,107 @@ archon workflow event emit --run-id <uuid> --type <event-type> [--data <json>]
 
 Exit code: 0 on success, 1 when `--run-id`, `--type` is missing, or `--type` is not a valid event type. Event persistence is best-effort (non-throwing) -- check server logs if events appear missing.
 
+### `agent list`
+
+List installed agents (bundled + local + installed).
+
+```bash
+archon agent list                          # all
+archon agent list --source bundled          # just the 4 ships-with
+archon agent list --source local --search "doc"   # filter + free-text
+archon agent list --limit 20 --json        # machine-readable
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--source` | One of `bundled`, `local`, `installed`. |
+| `--search` | Case-insensitive substring match against name + description. |
+| `--limit` | Max rows to return (default 50, max 200). |
+| `--json` | Emit machine-readable JSON instead of the formatted table. |
+
+Exit code: 0 success, 1 if `--source` is invalid.
+
+### `agent show <slug>`
+
+Show one agent's full definition: system prompt, tags, keywords, examples, and allowed tools.
+
+```bash
+archon agent show code-reviewer
+archon agent show docs-writer --json
+```
+
+Exit code: 0 success, 1 missing slug, 2 not found.
+
+### `agent install <path>`
+
+Load a YAML agent file from disk, validate it against `agentDefinitionSchema`, and upsert into the DB.
+
+```bash
+archon agent install ~/.archon/agents/docs-writer.yaml
+archon agent install /path/to/agent.yaml --json
+```
+
+Bundled and same-slug local agents are replaced atomically (the bundled one stays but its row is overwritten with the local source).
+
+Exit code: 0 success, 1 invalid args / load error, 2 file not found.
+
+### `agent uninstall <slug>`
+
+Remove an installed agent. **Refuses `bundled` agents** — they re-seed on every server boot. To override a bundled slug, install a same-slug YAML (which then shows up as `local` or `installed` and CAN be uninstalled).
+
+```bash
+archon agent uninstall docs-writer
+archon agent uninstall code-reviewer      # → "Cannot uninstall bundled"
+```
+
+Exit code: 0 removed, 1 refused (bundled) or other error, 2 not found.
+
+### `agent run <message>`
+
+Simulate the routing decision for a message without sending an actual chat. Uses the same 5-stage flow as the orchestrator (override → codebase default → heuristic → LLM → default fallback) and records the decision in `agent_runs`.
+
+```bash
+archon agent run "como faço pra escrever um teste unitário?"
+# → Routed to: test-writer (auto_heuristic, 0.83, 1 ms)
+#   Reason: test-writer (score 0.83: matched 2 keyword(s): teste, escrever um teste)
+
+archon agent run "agent:bug-investigator tá dando erro 500" --json
+# → { "routed_to": "bug-investigator", "decision": "override", "confidence": 1.0, ... }
+
+archon agent run "olha o que tem aqui" --codebase my-project
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--codebase <slug>` | Pin a codebase default for the simulation (router stage 2). |
+| `--json` | Machine-readable output. |
+
+Exit code: 0 success, 1 missing message.
+
+### `agent runs`
+
+Audit log of recent routing decisions from `agent_runs`. Default 20 rows.
+
+```bash
+archon agent runs --limit 20
+archon agent runs --slug code-reviewer    # just one agent
+archon agent runs --json                  # machine-readable
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--slug` | Filter to one agent's runs. |
+| `--limit` | Max rows (default 20, max 200). |
+| `--json` | Machine-readable output. |
+
+Exit code: 0 success.
+
 ### `isolation list`
 
 Show all active worktree environments.
@@ -552,4 +653,18 @@ archon isolation list
 
 # Clean up old worktrees
 archon isolation cleanup
+
+# Browse installed agents (4 bundled + any local you added)
+archon agent list
+archon agent show code-reviewer
+
+# Simulate routing a message (no chat, just see which agent would handle it)
+archon agent run "como faço pra escrever um teste?"
+
+# Install a custom agent from a YAML file
+archon agent install ~/.archon/agents/docs-writer.yaml
+archon agent uninstall docs-writer    # refuses bundled; safe for local/installed
+
+# Audit recent routing decisions
+archon agent runs --limit 20
 ```

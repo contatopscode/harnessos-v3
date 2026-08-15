@@ -66,7 +66,7 @@ psql $DATABASE_URL -c "\dt"
 
 ## Schema Overview
 
-The database has 18 tables, all prefixed with `remote_agent_`:
+The database has 20 tables, all prefixed with `remote_agent_`:
 
 1. **`remote_agent_codebases`** - Repository metadata
    - Commands stored as JSONB: `{command_name: {path, description}}`
@@ -148,6 +148,20 @@ The database has 18 tables, all prefixed with `remote_agent_`:
     - **PostgreSQL only.** Always created on Postgres via the idempotent schema apply, but populated only when web auth is enabled (`DATABASE_URL` + `BETTER_AUTH_SECRET`)
     - Owned and shaped by Better Auth (text ids, camelCase columns); Archon never queries them directly — a session maps to the canonical `users` row via `user_identities('web', <betterAuthUserId>)`
 
+19. **`remote_agent_agents`** - Installed agents (bundled + local + installed from future registry)
+    - `UNIQUE(slug)` — one row per agent; upsert on conflict replaces the row, preserving `installed_at` for "first install" vs "refresh" distinction
+    - `source` is one of `'bundled'` (ships with the app), `'local'` (per-project override), or `'installed'` (from a future registry)
+    - JSON-as-TEXT columns (`tags_json`, `keywords_json`, `examples_json`, `allowed_tools_json`, `definition_json`) are parsed in the store layer for SQLite/Postgres parity
+    - Seeded on every server boot from the 4 bundled YAMLs in `packages/core/src/agents/defaults/` (idempotent — refreshes on update)
+
+20. **`remote_agent_agent_runs`** - Append-only audit of every routing decision
+    - One row per non-slash chat message that goes through the orchestrator, plus rows from `archon agent run` simulations
+    - `decision` is one of `'override'` / `'codebase_default'` / `'auto_heuristic'` / `'auto_llm'` / `'default_fallback'` (CHECK-constrained)
+    - `confidence` is `0.0–1.0` (the router's score for the winning agent)
+    - `agent_slug` is **NOT a FK** — uninstalled agents still appear in history (same posture as `remote_agent_workflow_events.workflow_name`)
+    - Read by the `/console/agents` audit panel and `archon agent runs` CLI
+    - Never written on the error path — only after a successful chat turn
+
 ## Migration List
 
 | Migration | Description |
@@ -176,5 +190,8 @@ The database has 18 tables, all prefixed with `remote_agent_`:
 | `021_add_allow_env_keys_to_codebases.sql` | Allow-listed env keys per codebase |
 | `022_workflow_node_sessions.sql` | Per-node provider session persistence |
 | `023_add_default_branch_to_codebases.sql` | Detected default branch on codebases |
+| `024_agents.sql` | Agent system — `remote_agent_agents` (UNIQUE slug) + `remote_agent_agent_runs` (append-only audit). 4 bundled agents seed on every server boot. |
 
-> The `remote_agent_codebases.kind` column (project `'repo'` | `'folder'` discriminator, commented "From migration 024"), the `remote_agent_users.role` column, and the four `remote_agent_auth_*` Better Auth tables (opt-in web login) are applied inline in `000_combined.sql` rather than as numbered migrations, and converge on startup via the idempotent schema apply.
+> The `remote_agent_codebases.kind` column (project `'repo'` | `'folder'` discriminator, originally from migration 024's precursor changes), the `remote_agent_users.role` column, and the four `remote_agent_auth_*` Better Auth tables (opt-in web login) are applied inline in `000_combined.sql` rather than as numbered migrations, and converge on startup via the idempotent schema apply.
+
+> **SQLite parity gotcha** — the SQLite adapter's `createSchema()` is hardcoded inline in `packages/core/src/db/adapters/sqlite.ts:396-643` and does NOT auto-read `000_combined.sql`. New tables (like `remote_agent_agents` / `remote_agent_agent_runs`) must be added in **three** places: (a) the new `migrations/NNN_*.sql` file, (b) `migrations/000_combined.sql` for fresh installs, and (c) the SQLite adapter's `createSchema()` with SQLite-flavoured columns (`lower(hex(randomblob(16)))` instead of `gen_random_uuid()`, `TEXT` instead of `JSONB` / `TIMESTAMPTZ`). Forgetting (c) surfaces as `no such table: <name>` at runtime even when the schema "looks" applied.

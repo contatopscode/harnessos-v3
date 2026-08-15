@@ -85,6 +85,19 @@ See the [Variable Reference](/reference/variables/) for the complete list.
 
 Archon ships with bundled default commands for common operations like investigation, implementation, and code review. Repo-level commands in `.archon/commands/` override bundled defaults with the same name.
 
+## Agents
+
+An **agent** is a persona the orchestrator routes chat messages to. Each agent has a system prompt, a set of keywords, examples of the kind of message it handles, and the tools it should prefer. Four specialists ship bundled:
+
+- `code-reviewer` — strict, read-only review with verdict
+- `test-writer` — fast, deterministic, well-named tests
+- `bug-investigator` — root-cause analysis, not "try this" patches
+- `general-assistant` — catch-all for off-topic or ambiguous messages
+
+When a chat message comes in, the router picks the right agent in **< 5 ms** using a 5-stage flow: explicit `agent:slug` override → codebase default → heuristic (keyword/description overlap) → LLM fallback → general-assistant. The decision is written to the `agent_runs` audit table so you can later ask "why did this go to X?".
+
+You can install your own agents from a YAML file with `archon agent install <path>` or from the Web UI at `/console/agents`. See the [Agents guide](/guides/agents/) for the full schema, authoring tips, and the 5-stage flow diagram.
+
 ## Isolation (Worktrees)
 
 Every workflow run gets its own **git worktree** by default -- an isolated copy of your repository. This gives you three things:
@@ -135,4 +148,5 @@ Once registered, you can run workflows and chat against the folder from anywhere
 - [Quick Start](/getting-started/quick-start/) -- Run your first workflow
 - [Authoring Workflows](/guides/authoring-workflows/) -- Create your own multi-step workflows
 - [Authoring Commands](/guides/authoring-commands/) -- Write effective prompt templates
+- [Agents](/guides/agents/) -- Personas the orchestrator routes chat to (auto + `agent:slug` override)
 - [Variable Reference](/reference/variables/) -- All supported variables

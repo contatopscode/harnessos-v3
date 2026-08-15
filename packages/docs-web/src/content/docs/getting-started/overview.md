@@ -321,6 +321,12 @@ archon workflow run <name> --cwd /path/to/repo "<message>"
 | `archon isolation cleanup --merged` | Remove merged branches |
 | `archon isolation cleanup --merged --include-closed` | Also remove closed (abandoned) PR branches |
 | `archon complete <branch>` | Complete branch lifecycle |
+| `archon agent list` | List installed agents (bundled + local) |
+| `archon agent show <slug>` | Show one agent's full definition |
+| `archon agent install <path>` | Install a custom agent from a YAML file |
+| `archon agent uninstall <slug>` | Remove a local agent (refuses bundled) |
+| `archon agent run <message>` | Simulate routing a message and record the decision |
+| `archon agent runs` | Show recent agent routing decisions |
 | `archon validate workflows [name]` | Validate workflow definitions |
 | `archon validate commands [name]` | Validate command files |
 | `archon version` | Show version info |
