@@ -455,6 +455,79 @@ Exit code: 0 success.
 
 Show all active worktree environments.
 
+### `memory list`
+
+List stored memories. Filter by scope, kind, and free-text search across
+`content` (FTS5 OR-accent-stripped).
+
+```bash
+archon memory list                          # all
+archon memory list --scope user             # only user-scope
+archon memory list --kind preference        # only preferences
+archon memory list --search "postgres"      # free-text content search
+archon memory list --limit 100 --json       # machine-readable
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--scope` | One of `user`, `agent`, `project`, `conversation`. |
+| `--kind` | One of `note`, `preference`, `fact`, `project_context`, `feedback`. |
+| `--search` | Free-text match against `content` (FTS5 OR semantics, accent-stripped). |
+| `--limit` | Max rows (default 50). |
+
+### `memory add <content>`
+
+Manually add a memory. The orchestrator also persists chat-signal
+memories automatically (e.g. `lembre que…`); this is for bulk import or
+one-off corrections.
+
+```bash
+archon memory add "Postgres is on port 5434" \
+  --scope user --kind fact --source manual
+archon memory add "Monorepo uses Turborepo + Bun" \
+  --scope project --scope-id cortex --kind project_context
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--scope` | One of `user`, `agent`, `project`, `conversation` (default `user`). |
+| `--scope-id` | The agent slug / codebase id / conversation id this memory belongs to. |
+| `--kind` | One of `note`, `preference`, `fact`, `project_context`, `feedback` (default `note`). |
+| `--source` | One of `chat`, `manual`, `imported` (default `manual`). |
+
+### `memory search <query>`
+
+FTS5 search across the same scope set the orchestrator uses
+(`user` + `agent` + `project` + `conversation`). Returns up to
+`--limit` hits ranked by bm25, converted to 0-1 confidence.
+
+```bash
+archon memory search "setup do postgres local"
+archon memory search "monorepo stack" --scope project
+archon memory search "feedback" --kind feedback --limit 5 --json
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--scope` | Optional scope filter (applied client-side after recall). |
+| `--kind` | Optional kind filter (applied server-side at the FTS query). |
+| `--limit` | Max hits (default 10, max 50). |
+
+### `memory forget <id>`
+
+Delete a memory by id. Use `memory list` or `memory search` to find ids.
+Exits 2 if the id doesn't exist (so `&& …` works in shell pipelines).
+
+```bash
+archon memory forget 6746a69d5da581a9066627fe7c4f8d96
+```
+
 ```bash
 archon isolation list
 ```

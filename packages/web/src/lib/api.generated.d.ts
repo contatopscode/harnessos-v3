@@ -1318,6 +1318,64 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/codebases/mkdir': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a directory on disk for a new folder project */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['MkdirCodebaseBody'];
+        };
+      };
+      responses: {
+        /** @description Created */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['MkdirCodebaseResponse'];
+          };
+        };
+        /** @description Bad request (path is unsafe or invalid) */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/codebases/{id}/env': {
     parameters: {
       query?: never;
@@ -3374,6 +3432,213 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/memories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List stored memories (filter by scope, kind, or free-text search) */
+    get: {
+      parameters: {
+        query?: {
+          scope?: components['schemas']['MemoryScope'];
+          kind?: components['schemas']['MemoryKind'];
+          search?: string;
+          limit?: number;
+          offset?: number | null;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ListMemoriesResponse'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    put?: never;
+    /** Manually add a memory (the orchestrator persists chat-signal memories itself) */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['AddMemoryBody'];
+        };
+      };
+      responses: {
+        /** @description Created */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['AddMemoryResponse'];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/memories/recall': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** FTS5 search across the same scope set the orchestrator uses */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['RecallMemoriesBody'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['RecallMemoriesResponse'];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/memories/{id}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Delete a memory by id */
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ForgetMemoryResponse'];
+          };
+        };
+        /** @description Memory not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3588,6 +3853,13 @@ export interface components {
     AddCodebaseBody: {
       url?: string;
       path?: string;
+    };
+    MkdirCodebaseResponse: {
+      ok: boolean;
+      path: string;
+    };
+    MkdirCodebaseBody: {
+      path: string;
     };
     DeleteCodebaseResponse: {
       success: boolean;
@@ -4346,6 +4618,69 @@ export interface components {
     RouteAgentBody: {
       message: string;
       codebase?: string | null;
+    };
+    ListMemoriesResponse: {
+      total: number;
+      memories: components['schemas']['Memory'][];
+    };
+    Memory: {
+      id: string;
+      scope: components['schemas']['MemoryScope'];
+      scope_id: string | null;
+      kind: components['schemas']['MemoryKind'];
+      content: string;
+      source: components['schemas']['MemorySource'];
+      confidence: number;
+      use_count: number;
+      created_at: string;
+      last_used_at: string | null;
+    };
+    /** @enum {string} */
+    MemoryScope: 'user' | 'agent' | 'project' | 'conversation';
+    /** @enum {string} */
+    MemoryKind: 'note' | 'preference' | 'fact' | 'project_context' | 'feedback';
+    /** @enum {string} */
+    MemorySource: 'chat' | 'manual' | 'imported';
+    AddMemoryResponse: {
+      ok: boolean;
+      memory: components['schemas']['Memory'];
+    };
+    AddMemoryBody: {
+      content: string;
+      scope?: components['schemas']['MemoryScope'];
+      scope_id?: string | null;
+      kind?: components['schemas']['MemoryKind'];
+      source?: components['schemas']['MemorySource'];
+    };
+    RecallMemoriesResponse: {
+      query: string;
+      total: number;
+      hits: components['schemas']['MemoryRecallHit'][];
+    };
+    MemoryRecallHit: {
+      id: string;
+      scope: components['schemas']['MemoryScope'];
+      scope_id: string | null;
+      kind: components['schemas']['MemoryKind'];
+      content: string;
+      source: components['schemas']['MemorySource'];
+      confidence: number;
+      use_count: number;
+      created_at: string;
+      last_used_at: string | null;
+      rank_confidence: number;
+    };
+    RecallMemoriesBody: {
+      query: string;
+      scopes?: components['schemas']['MemoryScope'][];
+      kind?: components['schemas']['MemoryKind'];
+      /** @default 10 */
+      limit: number;
+    };
+    ForgetMemoryResponse: {
+      ok: boolean;
+      id: string;
+      removed: boolean;
     };
   };
   responses: never;

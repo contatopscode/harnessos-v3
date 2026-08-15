@@ -11,6 +11,7 @@ import { ChatPage } from './routes/ChatPage';
 import { PreviewPage } from './routes/PreviewPage';
 import { SettingsPage } from './routes/SettingsPage';
 import { AgentsPage } from './routes/AgentsPage';
+import { MemoryPage } from './routes/MemoryPage';
 import { invalidate } from './store/cache';
 import { K } from './store/keys';
 import { useKeymap, type Binding } from './lib/keymap';
@@ -62,6 +63,13 @@ export function ConsoleApp(): ReactElement {
           navigate('/console/agents');
         },
       },
+      {
+        keys: ['m'],
+        label: 'Abrir memória',
+        run: (): void => {
+          navigate('/console/memory');
+        },
+      },
     ],
     [navigate]
   );
@@ -83,6 +91,7 @@ export function ConsoleApp(): ReactElement {
             <Route index element={<RunsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="agents" element={<AgentsPage />} />
+            <Route path="memory" element={<MemoryPage />} />
             <Route path="builder" element={<BuilderRoute />} />
             <Route path="_preview" element={<PreviewPage />} />
             <Route path="p/:projectId" element={<RunsPage />} />

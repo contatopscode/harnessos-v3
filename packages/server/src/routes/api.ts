@@ -179,6 +179,18 @@ import {
   agentSlugParamsSchema,
 } from './schemas/agent.schemas';
 import {
+  memorySchema,
+  listMemoriesResponseSchema,
+  addMemoryResponseSchema,
+  forgetMemoryResponseSchema,
+  memoryRecallHitSchema,
+  recallMemoriesResponseSchema,
+  addMemoryBodySchema,
+  recallMemoriesBodySchema,
+  listMemoriesQuerySchema,
+  memoryIdParamsSchema,
+} from './schemas/memory.schemas';
+import {
   listAgents,
   getAgentBySlug,
   deleteAgentBySlug,
@@ -189,6 +201,10 @@ import {
   toAgentInsert,
   upsertAgent,
   routeMessage,
+  addMemory,
+  listMemories,
+  recallMemories,
+  deleteMemory,
   type AgentSource,
 } from '@archon/core';
 import {
@@ -1542,6 +1558,95 @@ const routeAgentRoute = createRoute({
  *  and used implicitly by Zod's type inference — they need to stay imported. */
 void agentRunSchema;
 void agentSourceSchema;
+
+// ---------------------------------------------------------------------------
+// Memory routes (path B — Memory + RAG)
+//
+// 4 endpoints, mounted at /api/memories. Literal paths FIRST so Hono
+// doesn't match `/memories/recall` against the `/memories/{id}` param:
+//   GET    /api/memories          — list with scope/kind/search filters
+//   POST   /api/memories          — add a memory (manual, for the Web UI)
+//   POST   /api/memories/recall   — FTS5 search (mirrors what the orchestrator injects)
+//   DELETE /api/memories/{id}     — forget a memory by id
+// ---------------------------------------------------------------------------
+
+const listMemoriesRoute = createRoute({
+  method: 'get',
+  path: '/api/memories',
+  tags: ['Memory'],
+  summary: 'List stored memories (filter by scope, kind, or free-text search)',
+  request: { query: listMemoriesQuerySchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: listMemoriesResponseSchema } },
+      description: 'OK',
+    },
+    500: jsonError('Server error'),
+  },
+});
+
+const addMemoryRoute = createRoute({
+  method: 'post',
+  path: '/api/memories',
+  tags: ['Memory'],
+  summary: 'Manually add a memory (the orchestrator persists chat-signal memories itself)',
+  request: {
+    body: {
+      content: { 'application/json': { schema: addMemoryBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: addMemoryResponseSchema } },
+      description: 'Created',
+    },
+    400: jsonError('Bad request'),
+    500: jsonError('Server error'),
+  },
+});
+
+// Literal path registered BEFORE the {id} param so Hono doesn't match
+// `recall` as a memory id.
+const recallMemoriesRoute = createRoute({
+  method: 'post',
+  path: '/api/memories/recall',
+  tags: ['Memory'],
+  summary: 'FTS5 search across the same scope set the orchestrator uses',
+  request: {
+    body: {
+      content: { 'application/json': { schema: recallMemoriesBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: recallMemoriesResponseSchema } },
+      description: 'OK',
+    },
+    400: jsonError('Bad request'),
+    500: jsonError('Server error'),
+  },
+});
+
+const forgetMemoryRoute = createRoute({
+  method: 'delete',
+  path: '/api/memories/{id}',
+  tags: ['Memory'],
+  summary: 'Delete a memory by id',
+  request: { params: memoryIdParamsSchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: forgetMemoryResponseSchema } },
+      description: 'OK',
+    },
+    404: jsonError('Memory not found'),
+    500: jsonError('Server error'),
+  },
+});
+
+/** memorySchema is referenced by the recall hit schema — keep the import alive. */
+void memorySchema;
 
 /**
  * Register all /api/* routes on the Hono app.
@@ -4775,4 +4880,142 @@ export function registerApiRoutes(
       return apiError(c, 500, 'Failed to route message');
     }
   });
+
+  // ----- Memory endpoints (path B) -----
+
+  // GET /api/memories — list with optional scope/kind/search filters.
+  registerOpenApiRoute(listMemoriesRoute, async c => {
+    try {
+      const parsed = listMemoriesQuerySchema.parse({
+        scope: c.req.query('scope') ?? undefined,
+        kind: c.req.query('kind') ?? undefined,
+        search: c.req.query('search') ?? undefined,
+        limit: c.req.query('limit') !== undefined ? Number(c.req.query('limit')) : undefined,
+        offset: c.req.query('offset') !== undefined ? Number(c.req.query('offset')) : undefined,
+      });
+      const result = await listMemories({
+        scope: parsed.scope,
+        kind: parsed.kind,
+        search: parsed.search,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
+      return c.json(
+        {
+          total: result.total,
+          memories: result.memories.map(m => ({
+            id: m.id,
+            scope: m.scope,
+            scope_id: m.scope_id,
+            kind: m.kind,
+            content: m.content,
+            source: m.source,
+            confidence: m.confidence,
+            use_count: m.use_count,
+            created_at: m.created_at,
+            last_used_at: m.last_used_at,
+          })),
+        },
+        200
+      );
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.memories.list_failed');
+      return apiError(c, 500, 'Failed to list memories');
+    }
+  });
+
+  // POST /api/memories — manually add a memory (the Web UI uses this for
+  // "Add memory" forms; the orchestrator persists chat-signal memories itself
+  // and does not call this endpoint).
+  registerOpenApiRoute(addMemoryRoute, async c => {
+    const body = getValidatedBody(c, addMemoryBodySchema);
+    try {
+      const saved = await addMemory({
+        scope: body.scope,
+        scopeId: body.scope_id ?? null,
+        kind: body.kind,
+        content: body.content,
+        source: body.source,
+      });
+      return c.json(
+        {
+          ok: true,
+          memory: {
+            id: saved.id,
+            scope: saved.scope,
+            scope_id: saved.scope_id,
+            kind: saved.kind,
+            content: saved.content,
+            source: saved.source,
+            confidence: saved.confidence,
+            use_count: saved.use_count,
+            created_at: saved.created_at,
+            last_used_at: saved.last_used_at,
+          },
+        },
+        201
+      );
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.memories.add_failed');
+      return apiError(c, 500, 'Failed to add memory');
+    }
+  });
+
+  // POST /api/memories/recall — FTS5 search. Mirrors what the orchestrator
+  // injects into the system prompt so the Web UI can preview what the model
+  // will see for a given query.
+  registerOpenApiRoute(recallMemoriesRoute, async c => {
+    const body = getValidatedBody(c, recallMemoriesBodySchema);
+    try {
+      const scopes = (body.scopes ?? ['user', 'agent', 'project', 'conversation']).map(s => ({
+        scope: s,
+        scopeId: null,
+      }));
+      const hits = await recallMemories({
+        query: body.query,
+        scopes,
+        kind: body.kind,
+        limit: body.limit,
+      });
+      return c.json(
+        {
+          query: body.query,
+          total: hits.length,
+          hits: hits.map(h => ({
+            id: h.id,
+            scope: h.scope,
+            scope_id: h.scope_id,
+            kind: h.kind,
+            content: h.content,
+            source: h.source,
+            confidence: h.confidence,
+            use_count: h.use_count,
+            created_at: h.created_at,
+            last_used_at: h.last_used_at,
+            rank_confidence: h.confidence,
+          })),
+        },
+        200
+      );
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.memories.recall_failed');
+      return apiError(c, 500, 'Failed to recall memories');
+    }
+  });
+
+  // DELETE /api/memories/{id} — forget a memory.
+  registerOpenApiRoute(forgetMemoryRoute, async c => {
+    const id = c.req.param('id') ?? '';
+    try {
+      const removed = await deleteMemory(id);
+      if (!removed) return apiError(c, 404, 'Memory not found');
+      return c.json({ ok: true, id, removed: true }, 200);
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.memories.forget_failed');
+      return apiError(c, 500, 'Failed to forget memory');
+    }
+  });
+
+  /** memoryRecallHitSchema is referenced by the recall response; keep import alive. */
+  void memoryRecallHitSchema;
 }

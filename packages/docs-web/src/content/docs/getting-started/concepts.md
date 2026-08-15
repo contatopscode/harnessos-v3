@@ -98,6 +98,10 @@ When a chat message comes in, the router picks the right agent in **< 5 ms** usi
 
 You can install your own agents from a YAML file with `archon agent install <path>` or from the Web UI at `/console/agents`. See the [Agents guide](/guides/agents/) for the full schema, authoring tips, and the 5-stage flow diagram.
 
+## Memory (recall)
+
+A **memory** is a fact the orchestrator carries across sessions. Each chat turn can write a row to `remote_agent_memories` (via the `lembre que…` / `minha preferência é…` signal phrases or `archon memory add`). On every follow-up turn, the top-5 relevant memories (FTS5 + bm25, 0-1 confidence) are injected into the system prompt so the model "remembers" what you told it. Four scopes (user, agent, project, conversation) and five kinds (note, preference, fact, project_context, feedback) let you organize memory the same way you organize chat intent. Browse and edit from `/console/memory` (press `m`) or `archon memory list/add/search/forget`. See the [Memory guide](/guides/memory/) for the signal phrases, the recall pipeline, and troubleshooting tips.
+
 ## Isolation (Worktrees)
 
 Every workflow run gets its own **git worktree** by default -- an isolated copy of your repository. This gives you three things:
@@ -149,4 +153,5 @@ Once registered, you can run workflows and chat against the folder from anywhere
 - [Authoring Workflows](/guides/authoring-workflows/) -- Create your own multi-step workflows
 - [Authoring Commands](/guides/authoring-commands/) -- Write effective prompt templates
 - [Agents](/guides/agents/) -- Personas the orchestrator routes chat to (auto + `agent:slug` override)
+- [Memory](/guides/memory/) -- Persistent facts the orchestrator carries across sessions (FTS5 recall, `lembre que…` signal phrases)
 - [Variable Reference](/reference/variables/) -- All supported variables

@@ -162,6 +162,22 @@ The database has 20 tables, all prefixed with `remote_agent_`:
     - Read by the `/console/agents` audit panel and `archon agent runs` CLI
     - Never written on the error path — only after a successful chat turn
 
+21. **`remote_agent_memories`** - Persistent facts the orchestrator carries across sessions (path B — Memory + RAG)
+    - `scope` is one of `'user'` / `'agent'` / `'project'` / `'conversation'` (CHECK-constrained)
+    - `kind` is one of `'note'` / `'preference'` / `'fact'` / `'project_context'` / `'feedback'` (CHECK-constrained)
+    - `source` is one of `'chat'` (orchestrator detected a "lembre que…" signal) / `'manual'` (CLI/UI/API) / `'imported'` (future bulk-import)
+    - `scope_id` is nullable — for `scope='user'` it stays NULL; for the others it points at the agent slug / codebase id / conversation id
+    - `use_count` and `last_used_at` are bumped best-effort on every recall (not in the same transaction as the FTS query)
+    - Backed by `remote_agent_memories_fts` (FTS5 virtual table) + 3 triggers (`memories_ai` after insert, `memories_ad` after delete, `memories_au` after update) that keep the index in sync without a separate write path
+    - Read by `buildMemoryPromptSection` on every chat turn (top-5 hits) and by the `/console/memory` page + `archon memory list/search` CLI
+    - PERSISTED on the success path of every chat turn (after the AI responds) when `detectMemorySignal` matches; failures are logged but never break the chat
+
+22. **`remote_agent_memories_fts`** - FTS5 virtual table over `remote_agent_memories.content`
+    - Tokenizer: `unicode61` with `remove_diacritics 2` (handles PT-BR accents: `é` ↔ `e`, `ã` ↔ `a`)
+    - Query semantics: **OR** with quote-escaped tokens (NOT FTS5's default AND) so natural language queries with stopwords work
+    - Rank: bm25, converted to 0-1 confidence via min/max normalization
+    - Updated automatically by the 3 triggers on `remote_agent_memories` — no separate write path
+
 ## Migration List
 
 | Migration | Description |
@@ -191,6 +207,7 @@ The database has 20 tables, all prefixed with `remote_agent_`:
 | `022_workflow_node_sessions.sql` | Per-node provider session persistence |
 | `023_add_default_branch_to_codebases.sql` | Detected default branch on codebases |
 | `024_agents.sql` | Agent system — `remote_agent_agents` (UNIQUE slug) + `remote_agent_agent_runs` (append-only audit). 4 bundled agents seed on every server boot. |
+| `025_memory.sql` | Memory + RAG — `remote_agent_memories` (4 scopes × 5 kinds) + `remote_agent_memories_fts` (FTS5 virtual table, `unicode61` with `remove_diacritics 2`) + 3 triggers (`memories_ai`/`ad`/`au`) that keep the FTS index in sync. Used by `buildMemoryPromptSection` on every chat turn and the `/console/memory` page. |
 
 > The `remote_agent_codebases.kind` column (project `'repo'` | `'folder'` discriminator, originally from migration 024's precursor changes), the `remote_agent_users.role` column, and the four `remote_agent_auth_*` Better Auth tables (opt-in web login) are applied inline in `000_combined.sql` rather than as numbered migrations, and converge on startup via the idempotent schema apply.
 

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router';
-import { Settings, Workflow, ArrowLeft, PenTool, type LucideIcon } from 'lucide-react';
+import { Settings, Workflow, ArrowLeft, PenTool, Brain, type LucideIcon } from 'lucide-react';
 import { ProjectRow } from './ProjectRow';
 import { EnvVarsDialog } from './EnvVarsDialog';
 import { useEntity, invalidate } from '../store/cache';
@@ -318,6 +318,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
           label="Configurações"
           title="Configurações ( , )"
         />
+        <RailNavLink to="/console/memory" icon={Brain} label="Memória" title="Memória ( m )" />
         <RailNavLink
           to="/legacy/workflows"
           icon={Workflow}

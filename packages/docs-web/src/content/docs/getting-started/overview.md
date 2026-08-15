@@ -327,6 +327,10 @@ archon workflow run <name> --cwd /path/to/repo "<message>"
 | `archon agent uninstall <slug>` | Remove a local agent (refuses bundled) |
 | `archon agent run <message>` | Simulate routing a message and record the decision |
 | `archon agent runs` | Show recent agent routing decisions |
+| `archon memory list` | List stored memories (filter by scope, kind, search) |
+| `archon memory add <content>` | Add a memory (--scope, --kind, --source) |
+| `archon memory search <query>` | FTS5 search across user/agent/project/conversation scopes |
+| `archon memory forget <id>` | Delete a memory by id (exit 2 if not found) |
 | `archon validate workflows [name]` | Validate workflow definitions |
 | `archon validate commands [name]` | Validate command files |
 | `archon version` | Show version info |
