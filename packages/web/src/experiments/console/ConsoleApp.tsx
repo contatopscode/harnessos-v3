@@ -36,28 +36,28 @@ export function ConsoleApp(): ReactElement {
     () => [
       {
         keys: ['p'],
-        label: 'Pick a project',
+        label: 'Escolher um projeto',
         run: (): void => {
           setPaletteOpen(true);
         },
       },
       {
         keys: ['?'],
-        label: 'Show help',
+        label: 'Mostrar ajuda',
         run: (): void => {
           setHelpOpen(v => !v);
         },
       },
       {
         keys: [','],
-        label: 'Open settings',
+        label: 'Abrir configurações',
         run: (): void => {
           navigate('/console/settings');
         },
       },
       {
         keys: ['a'],
-        label: 'Open agents',
+        label: 'Abrir agentes',
         run: (): void => {
           navigate('/console/agents');
         },

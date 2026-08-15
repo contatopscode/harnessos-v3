@@ -41,7 +41,7 @@ export function KeymapHelp({ open, onClose, groups }: KeymapHelpProps): ReactEle
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Keyboard shortcuts"
+      aria-label="Atalhos de teclado"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onClick={onClose}
     >
@@ -52,7 +52,7 @@ export function KeymapHelp({ open, onClose, groups }: KeymapHelpProps): ReactEle
         className="w-full max-w-lg overflow-hidden rounded-md border border-border bg-surface-elevated shadow-2xl"
       >
         <header className="flex items-baseline justify-between border-b border-border px-4 py-2">
-          <h2 className="text-sm font-semibold text-text-primary">Keyboard shortcuts</h2>
+          <h2 className="text-sm font-semibold text-text-primary">Atalhos de teclado</h2>
           <span className="font-mono text-[10px] text-text-tertiary">esc · ?</span>
         </header>
         <div className="max-h-[70vh] overflow-y-auto">

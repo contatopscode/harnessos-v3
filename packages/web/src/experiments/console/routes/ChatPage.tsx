@@ -184,37 +184,40 @@ export function ChatPage(): ReactElement {
     })();
   };
 
-  // Inline auto-scroll: stick to bottom on new messages if already near it.
-  // Mirrors RunDetailPage's variant.
+  // Inline auto-scroll: stick to the bottom as new content streams in, unless the
+  // user has deliberately scrolled up. `stickRef` is the user's intent and is
+  // updated ONLY by real user scrolls (handleScroll) — never re-measured on every
+  // render, which previously clobbered it to `false` right after new content grew
+  // the container, defeating the scroll entirely.
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const lastBottomRef = useRef(true);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el === null) return;
-    lastBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-  });
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el === null || !lastBottomRef.current) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages?.length]);
-
-  // Jump-to-bottom affordance: `atBottom` (state) drives the button's visibility;
-  // `lastBottomRef` (above) drives the auto-scroll stickiness. Keep them in sync.
+  const stickRef = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
+
   const handleScroll = useCallback((): void => {
     const el = scrollRef.current;
     if (el === null) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-    lastBottomRef.current = near;
+    stickRef.current = near;
     setAtBottom(near);
   }, []);
   const scrollToBottom = useCallback((): void => {
     const el = scrollRef.current;
     if (el === null) return;
     el.scrollTop = el.scrollHeight;
+    stickRef.current = true;
     setAtBottom(true);
   }, []);
+
+  // Signature changes on a new message AND as the trailing message streams in
+  // token-by-token (content length grows). Re-pin to the bottom on every such
+  // change and whenever the working indicator toggles, so its height is covered.
+  const lastMessage = (messages ?? [])[(messages ?? []).length - 1];
+  const streamSignature = `${(messages ?? []).length}:${lastMessage?.content.length ?? 0}`;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el === null || !stickRef.current) return;
+    el.scrollTop = el.scrollHeight;
+  }, [streamSignature, busy]);
 
   if (projectId === undefined) {
     return <EmptyState title="No project selected." />;
@@ -288,7 +291,7 @@ export function ChatPage(): ReactElement {
           <button
             type="button"
             onClick={scrollToBottom}
-            aria-label="Jump to bottom"
+            aria-label="Ir para o final"
             className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border bg-surface-elevated px-3 py-1 text-[11px] text-text-secondary shadow-md transition-colors hover:text-text-primary"
           >
             <span aria-hidden>↓</span>

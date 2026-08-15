@@ -9,11 +9,11 @@
 export type RunStatus = 'running' | 'paused' | 'failed' | 'completed' | 'cancelled';
 
 export const statusLabel: Record<RunStatus, string> = {
-  running: 'Running',
-  paused: 'Waiting for approval',
-  failed: 'Failed',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
+  running: 'Em execução',
+  paused: 'Aguardando aprovação',
+  failed: 'Falhou',
+  completed: 'Concluída',
+  cancelled: 'Cancelada',
 };
 
 /**

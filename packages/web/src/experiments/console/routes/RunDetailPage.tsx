@@ -212,20 +212,26 @@ export function RunDetailPage(): ReactElement {
     }
   }, [detail, nodeOptions, selectedNodeId]);
 
-  // Auto-scroll to bottom on new content IF user is already near the bottom.
-  const lastBottomRef = useRef(true);
-  useEffect(() => {
+  // Auto-scroll: stick to the bottom as new content streams in, unless the user
+  // has deliberately scrolled up. `stickRef` reflects that intent and is updated
+  // ONLY by real user scrolls (handleLogScroll) — never re-measured every render,
+  // which previously clobbered it to `false` right after new content grew the
+  // container and defeated the scroll entirely.
+  const stickRef = useRef(true);
+  const handleLogScroll = useCallback((): void => {
     const el = scrollRef.current;
     if (el === null) return;
-    // Near-bottom heuristic: within 120px of the end.
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    lastBottomRef.current = atBottom;
-  });
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
+  // Signature changes on a new message/event AND as the trailing message streams
+  // in token-by-token (content length grows), so auto-scroll keeps pace.
+  const lastScrollMessage = (messages ?? [])[(messages ?? []).length - 1];
+  const scrollSignature = `${(messages ?? []).length}:${detail?.events.length ?? 0}:${lastScrollMessage?.content.length ?? 0}`;
   useEffect(() => {
     const el = scrollRef.current;
-    if (el === null || !lastBottomRef.current) return;
+    if (el === null || !stickRef.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages?.length, detail?.events.length]);
+  }, [scrollSignature]);
 
   // Keymap bindings: hoisted above early returns so the hook order is stable
   // across all render paths (loading, error, ready).
@@ -380,7 +386,11 @@ export function RunDetailPage(): ReactElement {
 
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {view === 'log' ? (
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+            <div
+              ref={scrollRef}
+              onScroll={handleLogScroll}
+              className="min-h-0 flex-1 overflow-y-auto"
+            >
               <div className="w-full px-6">
                 <div className="sticky top-0 z-10 -mx-6 bg-surface px-6">{toolbar}</div>
 

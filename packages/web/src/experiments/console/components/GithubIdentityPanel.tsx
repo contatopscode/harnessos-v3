@@ -98,21 +98,21 @@ export function GithubIdentityPanel(): ReactElement | null {
   if (error instanceof HttpError && error.status === 401) return null;
   if (error !== undefined) {
     return (
-      <SettingsSection title="GitHub Identity">
+      <SettingsSection title="Identidade GitHub">
         <p className="font-mono text-[11px] text-error">{error.message}</p>
       </SettingsSection>
     );
   }
   if (status === undefined) {
     return (
-      <SettingsSection title="GitHub Identity">
+      <SettingsSection title="Identidade GitHub">
         <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
       </SettingsSection>
     );
   }
 
   return (
-    <SettingsSection title="GitHub Identity">
+    <SettingsSection title="Identidade GitHub">
       <div className="flex flex-col gap-3 text-[12px]">
         {status.connected ? (
           <div className="flex items-center justify-between gap-3">

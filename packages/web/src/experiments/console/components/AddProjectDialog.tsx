@@ -177,7 +177,9 @@ export function AddProjectDialog({
       // permission). Wrap in a function reference so TS doesn't complain.
       const picker = window.showDirectoryPicker;
       if (typeof picker !== 'function') {
-        setError('Native folder picker is not available in this browser. Type the path manually.');
+        setError(
+          'Seletor nativo de pastas indisponível neste navegador. Digite o caminho manualmente.'
+        );
         return;
       }
       const handle = await picker({ mode: 'read' });
@@ -187,7 +189,7 @@ export function AddProjectDialog({
     } catch (err) {
       // User-cancelled (AbortError) — silent. Other errors: surface them.
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setError(err instanceof Error ? err.message : 'Folder picker failed');
+      setError(err instanceof Error ? err.message : 'Seletor de pasta falhou');
     }
   };
 
@@ -201,13 +203,13 @@ export function AddProjectDialog({
     setCreateError(null);
     const name = newName.trim();
     if (name === '') {
-      setCreateError('Folder name is required');
+      setCreateError('O nome da pasta é obrigatório');
       createNameRef.current?.focus();
       return;
     }
     const parent = newParent.trim();
     if (parent === '') {
-      setCreateError('Parent path is required');
+      setCreateError('O caminho pai é obrigatório');
       return;
     }
     const fullPath = joinPath(parent, name);
@@ -221,7 +223,7 @@ export function AddProjectDialog({
       if (!res.ok) {
         const body = await res.text();
         const truncated = body.length > 200 ? body.slice(0, 200) + '...' : body;
-        throw new Error(`Server returned ${res.status}: ${truncated}`);
+        throw new Error(`Servidor retornou ${res.status}: ${truncated}`);
       }
       // Server returned { ok, path }; use the canonical resolved path
       const data = (await res.json()) as { ok: boolean; path: string };
@@ -230,7 +232,7 @@ export function AddProjectDialog({
       setNewName('');
       // Keep newParent in place so the user can create siblings quickly.
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Failed to create folder');
+      setCreateError(err instanceof Error ? err.message : 'Falha ao criar pasta');
     } finally {
       setCreating(false);
     }
@@ -262,17 +264,17 @@ export function AddProjectDialog({
         <div className="mb-[18px] flex items-start justify-between gap-4">
           <div>
             <h2 className="text-[18px] font-extrabold tracking-[-0.3px] text-text-primary">
-              Add project
+              Adicionar projeto
             </h2>
             <p className="mt-1 text-[13px] text-text-tertiary">
-              Connect a repository or a local folder as a workspace.
+              Conecte um repositório ou uma pasta local como workspace.
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            title="Close"
-            aria-label="Close"
+            title="Fechar"
+            aria-label="Fechar"
             className="rounded-lg p-1.5 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
           >
             <span aria-hidden className="block text-[14px] leading-none">
@@ -309,14 +311,14 @@ export function AddProjectDialog({
               <span aria-hidden className="flex">
                 {m === 'url' ? <GitHubIcon /> : <FolderIcon />}
               </span>
-              {m === 'url' ? 'GitHub URL' : 'Local path'}
+              {m === 'url' ? 'URL do GitHub' : 'Caminho local'}
             </button>
           ))}
         </div>
 
         {/* Field */}
         <label className="mb-[9px] block font-mono text-[11px] font-semibold uppercase tracking-[0.09em] text-text-tertiary">
-          {isGit ? 'Repository URL' : 'Local folder path'}
+          {isGit ? 'URL do repositório' : 'Caminho da pasta local'}
         </label>
         <div
           className="flex h-[46px] items-center gap-2.5 rounded-[11px] border bg-surface px-3.5 transition-all focus-within:shadow-[0_0_0_4px_color-mix(in_oklch,var(--brand-magenta),transparent_91%)]"
@@ -346,11 +348,11 @@ export function AddProjectDialog({
                 void onBrowse();
               }}
               disabled={submitting}
-              title="Open the native folder picker (Chrome / Edge only)"
+              title="Abrir o seletor nativo de pastas (apenas Chrome / Edge)"
               className="rounded-md border px-2 py-1 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
               style={{ borderColor: 'var(--border)' }}
             >
-              Browse…
+              Procurar…
             </button>
           ) : null}
         </div>
@@ -359,8 +361,8 @@ export function AddProjectDialog({
         {!isGit ? (
           <div className="mt-[11px] space-y-2 text-[12.5px] leading-relaxed text-text-tertiary">
             <p>
-              HarnessOS will use this existing folder as the project source — nothing is copied or
-              moved.
+              HarnessOS vai usar esta pasta existente como origem do projeto — nada é copiado nem
+              movido.
             </p>
             {!showCreate ? (
               <button
@@ -372,7 +374,7 @@ export function AddProjectDialog({
                 className="inline-flex items-center gap-1.5 rounded border border-dashed px-2 py-1 text-[11.5px] font-semibold text-text-secondary transition-colors hover:border-solid hover:bg-surface-hover hover:text-text-primary"
                 style={{ borderColor: 'var(--border-bright)' }}
               >
-                <span aria-hidden>+</span> Create new folder
+                <span aria-hidden>+</span> Criar nova pasta
               </button>
             ) : (
               <div
@@ -381,7 +383,7 @@ export function AddProjectDialog({
               >
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
-                    New folder
+                    Nova pasta
                   </span>
                   <button
                     type="button"
@@ -391,7 +393,7 @@ export function AddProjectDialog({
                     }}
                     className="text-[11px] text-text-tertiary hover:text-text-primary"
                   >
-                    Cancel
+                    Cancelar
                   </button>
                 </div>
                 <div className="space-y-2">
@@ -401,7 +403,7 @@ export function AddProjectDialog({
                     onChange={e => {
                       setNewParent(e.target.value);
                     }}
-                    placeholder="Parent path — e.g. ~/projects or /Users/you/work"
+                    placeholder="Caminho pai — ex.: ~/projetos ou /Users/voce/trabalho"
                     spellCheck={false}
                     className="block w-full rounded-md border bg-surface-elevated px-2.5 py-1.5 font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
                     style={{ borderColor: 'var(--border)' }}
@@ -416,7 +418,7 @@ export function AddProjectDialog({
                       onChange={e => {
                         setNewName(e.target.value);
                       }}
-                      placeholder="folder-name"
+                      placeholder="nome-da-pasta"
                       spellCheck={false}
                       className="flex-1 rounded-md border bg-surface-elevated px-2.5 py-1.5 font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
                       style={{ borderColor: 'var(--border)' }}
@@ -436,7 +438,7 @@ export function AddProjectDialog({
                       disabled={creating || newName.trim() === ''}
                       className="rounded-md bg-accent-primary px-2.5 py-1.5 text-[11.5px] font-bold text-on-accent disabled:opacity-50"
                     >
-                      {creating ? 'Creating…' : 'Create'}
+                      {creating ? 'Criando…' : 'Criar'}
                     </button>
                   </div>
                 </div>
@@ -450,7 +452,7 @@ export function AddProjectDialog({
           </div>
         ) : (
           <p className="mt-[11px] text-[12.5px] leading-relaxed text-text-tertiary">
-            HarnessOS will clone this repo to{' '}
+            HarnessOS vai clonar este repo em{' '}
             <code
               className="rounded border bg-surface px-1.5 py-0.5 font-mono text-[0.92em] text-text-secondary"
               style={{ borderColor: 'var(--border)' }}
@@ -476,7 +478,7 @@ export function AddProjectDialog({
             className="rounded-[10px] border bg-transparent px-[18px] py-2.5 text-[13px] font-semibold text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
             style={{ borderColor: 'var(--border-bright)' }}
           >
-            Cancel
+            Cancelar
           </button>
           <button
             type="submit"
@@ -486,7 +488,7 @@ export function AddProjectDialog({
             <span aria-hidden className="text-[14px] leading-none">
               +
             </span>
-            {submitting ? 'Adding…' : 'Add project'}
+            {submitting ? 'Adicionando…' : 'Adicionar projeto'}
           </button>
         </div>
       </form>

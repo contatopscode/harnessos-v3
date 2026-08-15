@@ -173,7 +173,7 @@ export function ApprovalPanel({ run }: ApprovalPanelProps): ReactElement {
             }}
             disabled={busy}
             className="shrink-0 rounded border border-error/30 px-3 text-[12px] text-error transition-colors hover:bg-error/10 disabled:opacity-40"
-            title="Reject this run"
+            title="Rejeitar esta execução"
           >
             Reject
           </button>

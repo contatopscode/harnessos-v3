@@ -140,7 +140,7 @@ export function RecentRunRow({
                 onRerun();
               }}
               title={`Rerun ${run.workflow} with the same message`}
-              aria-label="Rerun"
+              aria-label="Reexecutar"
               className="rounded p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
               <span aria-hidden className="text-[12px] leading-none">
@@ -156,7 +156,7 @@ export function RecentRunRow({
                 if (run.workingPath !== null) openInIde(run.workingPath);
               }}
               title={`Open ${run.workingPath} in IDE`}
-              aria-label="Open in IDE"
+              aria-label="Abrir na IDE"
               className="rounded p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
               <span aria-hidden className="font-mono text-[12px] leading-none">
@@ -172,7 +172,7 @@ export function RecentRunRow({
             void navigator.clipboard.writeText(`archon workflow get ${run.id}`);
           }}
           title={`Copy CLI command: archon workflow get ${shortRunId(run.id)}`}
-          aria-label="Copy CLI command"
+          aria-label="Copiar comando CLI"
           className="inline-flex items-center gap-1.5 rounded-[7px] border bg-surface-elevated px-2.5 py-[5px] font-mono text-[11px] font-semibold text-text-secondary transition-colors hover:border-accent-bright/50 hover:text-text-primary"
           // Inline because the console scope's wildcard border-color rule
           // repaints Tailwind border utilities (see theme.css).

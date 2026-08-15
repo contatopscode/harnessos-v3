@@ -118,7 +118,7 @@ export function ActiveRunCard({
             {typeof run.costUsd === 'number' ? (
               <span
                 className="font-mono text-[11px] tabular-nums text-text-secondary"
-                title="Total agent cost"
+                title="Custo total do agente"
               >
                 {formatCost(run.costUsd)}
               </span>
@@ -131,8 +131,8 @@ export function ActiveRunCard({
                   e.stopPropagation();
                   if (run.workingPath !== null) openInIde(run.workingPath);
                 }}
-                title={`Open ${run.workingPath} in IDE`}
-                aria-label="Open in IDE"
+                title={`Abrir ${run.workingPath} na IDE`}
+                aria-label="Abrir na IDE"
                 className="rounded p-1 text-text-tertiary opacity-0 transition-all hover:bg-surface-hover hover:text-text-primary group-hover:opacity-100"
               >
                 <span aria-hidden className="font-mono text-[12px] leading-none">
@@ -149,7 +149,7 @@ export function ActiveRunCard({
           <div className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[12px]">
             {run.userMessage !== '' ? (
               <>
-                <span className="font-mono text-text-tertiary">input</span>
+                <span className="font-mono text-text-tertiary">entrada</span>
                 <span className="truncate font-mono text-text-secondary" title={run.userMessage}>
                   {run.userMessage}
                 </span>
@@ -157,13 +157,13 @@ export function ActiveRunCard({
             ) : null}
             {run.status === 'running' && hasValue(run.currentNode) ? (
               <>
-                <span className="font-mono text-text-tertiary">node</span>
+                <span className="font-mono text-text-tertiary">nó</span>
                 <span className="font-mono text-text-primary">{run.currentNode}</span>
               </>
             ) : null}
             {run.status === 'running' && hasValue(run.lastTool) ? (
               <>
-                <span className="font-mono text-text-tertiary">tool</span>
+                <span className="font-mono text-text-tertiary">ferramenta</span>
                 <span className="font-mono text-text-primary">
                   {run.lastTool}
                   <span aria-hidden className="ml-1 inline-block animate-pulse">
@@ -185,7 +185,7 @@ export function ActiveRunCard({
               <span aria-hidden className="leading-none">
                 ⚠
               </span>
-              <span>Waiting for your input — see the banner at the top.</span>
+              <span>Aguardando sua resposta — veja o aviso no topo.</span>
             </div>
           ) : (
             <>
@@ -205,8 +205,8 @@ export function ActiveRunCard({
             </span>
             <span>
               {run.gateResolved === 'approved'
-                ? 'Approved — resuming…'
-                : 'Rejected — running on-reject rework…'}
+                ? 'Aprovado — retomando…'
+                : 'Rejeitado — executando revisão on-reject…'}
             </span>
           </div>
         ) : null}

@@ -176,7 +176,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
         </div>
         <div className="flex items-center gap-2 px-1 pb-3">
           <span className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-text-tertiary">
-            Projects
+            Projetos
           </span>
           <span className="rounded-full border border-border bg-surface-elevated px-2 py-px font-mono text-[10.5px] font-bold text-text-secondary">
             {(projects ?? []).length}
@@ -194,7 +194,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
             onChange={e => {
               setQuery(e.target.value);
             }}
-            placeholder="Filter projects…"
+            placeholder="Filtrar projetos…"
             spellCheck={false}
             className="min-w-0 flex-1 bg-transparent text-[13px] text-text-primary outline-none placeholder:text-text-tertiary"
           />
@@ -204,8 +204,8 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
               onClick={() => {
                 setQuery('');
               }}
-              title="Clear"
-              aria-label="Clear filter"
+              title="Limpar"
+              aria-label="Limpar filtro"
               className="rounded p-0.5 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
             >
               <span aria-hidden className="text-[11px] leading-none">
@@ -223,8 +223,8 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
           onClick={() => {
             navigate('/console');
           }}
-          title="All projects"
-          aria-label="All projects"
+          title="Todos os projetos"
+          aria-label="Todos os projetos"
           aria-pressed={allSelected}
           className={`relative flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors ${
             allSelected
@@ -238,7 +238,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
               className="brand-bar pointer-events-none absolute -left-px bottom-[9px] top-[9px] w-[3px] rounded-r-[3px]"
             />
           ) : null}
-          <span>All projects</span>
+          <span>Todos os projetos</span>
         </button>
       </div>
 
@@ -281,7 +281,7 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
         ))}
         {groups.length === 0 && error === undefined ? (
           <div className="px-3 py-6 text-center text-[12.5px] text-text-tertiary">
-            No projects match “{query}”.
+            Nenhum projeto encontrado para “{query}”.
           </div>
         ) : null}
       </div>
@@ -291,14 +291,14 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
         <button
           type="button"
           onClick={onAddProject}
-          title="Add project"
-          aria-label="Add project"
+          title="Adicionar projeto"
+          aria-label="Adicionar projeto"
           className="flex w-full items-center gap-2.5 rounded-[10px] border border-border bg-surface px-3 py-2.5 text-left text-[13px] font-semibold text-text-secondary transition-colors hover:border-accent-bright/50 hover:bg-surface-hover hover:text-text-primary"
         >
           <span aria-hidden="true" className="text-base leading-none text-accent-bright">
             +
           </span>
-          <span>Add project</span>
+          <span>Adicionar projeto</span>
         </button>
       </div>
 
@@ -308,27 +308,27 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
         <RailNavLink
           to="/console/builder"
           icon={PenTool}
-          label="Workflow Builder"
-          title="Visual workflow builder (beta)"
+          label="Construtor de Workflows"
+          title="Construtor visual de workflows (beta)"
           badge="beta"
         />
         <RailNavLink
           to="/console/settings"
           icon={Settings}
-          label="Settings"
-          title="Settings ( , )"
+          label="Configurações"
+          title="Configurações ( , )"
         />
         <RailNavLink
           to="/legacy/workflows"
           icon={Workflow}
           label="Workflows"
-          title="Workflows (classic UI)"
+          title="Workflows (UI clássica)"
         />
         <RailNavLink
           to="/legacy"
           icon={ArrowLeft}
-          label="Old UI"
-          title="Switch back to the classic UI"
+          label="UI Antiga"
+          title="Voltar para a UI clássica"
         />
       </div>
 

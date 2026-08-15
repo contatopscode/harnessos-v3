@@ -225,7 +225,7 @@ function RunsFeed({
     <div className="flex flex-col gap-[26px]">
       {showActiveSection ? (
         <section>
-          <SectionHeader label="Active" count={active.length} />
+          <SectionHeader label="Ativas" count={active.length} />
           <div className="flex flex-col gap-2">
             {draftProject !== null ? (
               <DraftRunCard projectId={draftProject.id} projectCwd={draftProject.path} />
@@ -245,7 +245,7 @@ function RunsFeed({
 
       {recent.length > 0 ? (
         <section>
-          <SectionHeader label="Recent" count={recent.length} />
+          <SectionHeader label="Recentes" count={recent.length} />
           <div className="flex flex-col overflow-hidden rounded-[12px] border border-border bg-surface">
             {recent.map(run => (
               <RecentRunRow
@@ -343,7 +343,7 @@ export function RunsPage(): ReactElement {
   );
   const promotedRunIds = useMemo(() => new Set(visiblePending.map(r => r.id)), [visiblePending]);
 
-  const heading = scope === 'all' ? 'All projects' : (project?.name ?? 'Project');
+  const heading = scope === 'all' ? 'Todos os projetos' : (project?.name ?? 'Projeto');
   const hasScopedProject = scope !== 'all' && project !== undefined && project !== null;
   const draftProject = hasScopedProject ? { id: project.id, path: project.path } : null;
 
@@ -375,7 +375,7 @@ export function RunsPage(): ReactElement {
     () => [
       {
         keys: ['j'],
-        label: 'Move down',
+        label: 'Mover para baixo',
         run: (): void => {
           if (runs.length === 0) return;
           setSelectedIndex(i => Math.min(runs.length - 1, (i < 0 ? -1 : i) + 1));
@@ -383,7 +383,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['k'],
-        label: 'Move up',
+        label: 'Mover para cima',
         run: (): void => {
           if (runs.length === 0) return;
           setSelectedIndex(i => Math.max(0, (i < 0 ? runs.length : i) - 1));
@@ -391,21 +391,21 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['g', 'g'],
-        label: 'Jump to first',
+        label: 'Ir para o início',
         run: (): void => {
           if (runs.length > 0) setSelectedIndex(0);
         },
       },
       {
         keys: ['G'],
-        label: 'Jump to last',
+        label: 'Ir para o final',
         run: (): void => {
           if (runs.length > 0) setSelectedIndex(runs.length - 1);
         },
       },
       {
         keys: ['Enter'],
-        label: 'Open selected',
+        label: 'Abrir execução selecionada',
         when: (): boolean => selectedRun !== null,
         run: (): void => {
           if (selectedRun !== null) open(selectedRun.id, selectedRun.projectId);
@@ -413,7 +413,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['Escape'],
-        label: 'Clear selection',
+        label: 'Limpar seleção',
         when: (): boolean => selectedIndex !== -1,
         run: (): void => {
           setSelectedIndex(-1);
@@ -421,7 +421,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['/'],
-        label: 'Focus search',
+        label: 'Focar busca',
         run: (): void => {
           searchRef.current?.focus();
           searchRef.current?.select();
@@ -429,7 +429,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['1'],
-        label: 'Filter: running',
+        label: 'Filtro: em execução',
         run: (): void => {
           setFilter('running');
           setSelectedIndex(-1);
@@ -437,7 +437,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['2'],
-        label: 'Filter: paused',
+        label: 'Filtro: pausadas',
         run: (): void => {
           setFilter('paused');
           setSelectedIndex(-1);
@@ -445,7 +445,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['3'],
-        label: 'Filter: failed',
+        label: 'Filtro: falharam',
         run: (): void => {
           setFilter('failed');
           setSelectedIndex(-1);
@@ -453,7 +453,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['4'],
-        label: 'Filter: completed',
+        label: 'Filtro: concluídas',
         run: (): void => {
           setFilter('completed');
           setSelectedIndex(-1);
@@ -461,7 +461,7 @@ export function RunsPage(): ReactElement {
       },
       {
         keys: ['5'],
-        label: 'Filter: all',
+        label: 'Filtro: todas',
         run: (): void => {
           setFilter('all');
           setSelectedIndex(-1);
@@ -479,7 +479,9 @@ export function RunsPage(): ReactElement {
           <div className="min-w-0">
             <h1 className="truncate text-base font-medium text-text-primary">{heading}</h1>
             <p className="text-xs text-text-tertiary">
-              {scope === 'all' ? 'Every run, across every project.' : (project?.path ?? 'Loading…')}
+              {scope === 'all'
+                ? 'Cada execução, em cada projeto.'
+                : (project?.path ?? 'Carregando…')}
               {demoMode ? (
                 <span className="ml-2 rounded border border-warning/40 bg-warning/10 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-warning">
                   demo mocks on
@@ -511,7 +513,7 @@ export function RunsPage(): ReactElement {
                   setQuery('');
                 }
               }}
-              placeholder="Search workflow, project, run id…"
+              placeholder="Buscar workflow, projeto, id de execução…"
               spellCheck={false}
               className="min-w-0 flex-1 bg-transparent font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
             />
@@ -520,7 +522,7 @@ export function RunsPage(): ReactElement {
 
         {scope === 'all' ? (
           <div className="rounded border border-dashed border-border bg-surface-inset/60 px-3 py-2 text-[12px] text-text-tertiary">
-            Pick a project on the left to start a run.
+            Escolha um projeto à esquerda para iniciar uma execução.
           </div>
         ) : (
           <ProjectViewTabs projectId={scope} active="runs" />
@@ -547,19 +549,19 @@ export function RunsPage(): ReactElement {
 
       <div className="flex-1 overflow-y-auto px-[30px] pb-[30px] pt-[22px]">
         {error !== undefined && !demoMode ? (
-          <EmptyState title="Could not load runs." hint={error.message} />
+          <EmptyState title="Falha ao carregar execuções." hint={error.message} />
         ) : loading && !demoMode ? (
-          <EmptyState title="Loading…" />
+          <EmptyState title="Carregando…" />
         ) : runs.length === 0 && draftProject === null ? (
           <EmptyState
             title={
               filter === 'running'
-                ? 'Nothing running right now.'
+                ? 'Nada em execução agora.'
                 : filter === 'all'
-                  ? 'No runs yet.'
-                  : `No ${filter} runs.`
+                  ? 'Nenhuma execução ainda.'
+                  : `Nenhuma execução ${filter === 'paused' ? 'pausada' : filter === 'failed' ? 'falhada' : 'concluída'}.`
             }
-            hint={scope === 'all' ? 'Start one from a project.' : undefined}
+            hint={scope === 'all' ? 'Inicie uma a partir de um projeto.' : undefined}
           />
         ) : (
           <RunsFeed

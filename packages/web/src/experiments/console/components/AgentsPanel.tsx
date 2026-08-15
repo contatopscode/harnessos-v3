@@ -32,15 +32,15 @@ export function AgentsPanel(): ReactElement | null {
   if (error instanceof HttpError && error.status === 401) return null;
   if (error !== undefined) {
     return (
-      <SettingsSection title="Agents">
+      <SettingsSection title="Agentes">
         <p className="font-mono text-[11px] text-error">{error.message}</p>
       </SettingsSection>
     );
   }
   if (data === undefined) {
     return (
-      <SettingsSection title="Agents">
-        <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
+      <SettingsSection title="Agentes">
+        <p className="font-mono text-[11px] text-text-tertiary">Carregando…</p>
       </SettingsSection>
     );
   }
@@ -52,7 +52,7 @@ export function AgentsPanel(): ReactElement | null {
   const agents = data.agents ?? [];
 
   return (
-    <SettingsSection title="Agents">
+    <SettingsSection title="Agentes">
       <div className="flex flex-col gap-3 text-[12px]">
         <p className="text-text-secondary">
           Each agent lists the credentials it can spend. Connect a key or subscription inside the

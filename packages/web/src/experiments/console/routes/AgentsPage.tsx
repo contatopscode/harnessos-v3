@@ -46,15 +46,15 @@ const SOURCES: AgentSource[] = ['bundled', 'local', 'installed'];
 const SOURCE_LABELS: Record<AgentSource, string> = {
   bundled: 'Bundled',
   local: 'Local',
-  installed: 'Installed',
+  installed: 'Instalado',
 };
 
 const DECISION_LABELS: Record<RoutingDecision, string> = {
   override: 'Override',
   codebase_default: 'Codebase default',
-  auto_heuristic: 'Auto (heuristic)',
+  auto_heuristic: 'Auto (heurística)',
   auto_llm: 'Auto (LLM)',
-  default_fallback: 'Default fallback',
+  default_fallback: 'Fallback padrão',
 };
 
 /**
@@ -126,7 +126,7 @@ export function AgentsPage(): ReactElement {
 
   const handleUninstall = useCallback(
     async (slug: string): Promise<void> => {
-      if (!confirm(`Uninstall agent "${slug}"?`)) return;
+      if (!confirm(`Desinstalar o agente "${slug}"?`)) return;
       try {
         await fetchJSON<{ ok: boolean; removed: boolean }>(
           `/api/agents/${encodeURIComponent(slug)}`,
@@ -153,7 +153,7 @@ export function AgentsPage(): ReactElement {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: installPath.trim() }),
       });
-      setInstallResult({ ok: true, message: `Installed ${result.slug}.` });
+      setInstallResult({ ok: true, message: `Instalado ${result.slug}.` });
       setInstallPath('');
       await refresh();
     } catch (err) {
@@ -166,11 +166,12 @@ export function AgentsPage(): ReactElement {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="px-10 pt-[22px]">
-        <h1 className="text-[22px] font-extrabold tracking-[-0.4px] text-text-primary">Agents</h1>
+        <h1 className="text-[22px] font-extrabold tracking-[-0.4px] text-text-primary">Agentes</h1>
         <p className="mt-1 text-xs text-text-tertiary">
-          Personas the orchestrator routes chat messages to. Bundled agents ship with the app;{' '}
-          <code className="text-text-secondary">local</code> agents are per-project overrides;{' '}
-          <code className="text-text-secondary">installed</code> agents come from a future registry.
+          Personas para as quais o orchestrator roteia mensagens de chat. Agentes{' '}
+          <code className="text-text-secondary">bundled</code> vêm com o app; agentes{' '}
+          <code className="text-text-secondary">local</code> são overrides por projeto; agentes{' '}
+          <code className="text-text-secondary">installed</code> vêm de um registry futuro.
         </p>
       </header>
 
@@ -183,7 +184,7 @@ export function AgentsPage(): ReactElement {
 
         {/* ── Install bar ────────────────────────────────────────────── */}
         <section className="mx-auto mb-6 flex max-w-[1080px] flex-col gap-2 rounded-md border border-border-subtle bg-surface-elevated p-4">
-          <h2 className="text-sm font-semibold text-text-primary">Install from YAML</h2>
+          <h2 className="text-sm font-semibold text-text-primary">Instalar a partir de YAML</h2>
           <div className="flex gap-2">
             <input
               type="text"
@@ -191,7 +192,7 @@ export function AgentsPage(): ReactElement {
               onChange={e => {
                 setInstallPath(e.target.value);
               }}
-              placeholder="/path/to/agent.yaml"
+              placeholder="/caminho/para/agent.yaml"
               className="flex-1 rounded border border-border-subtle bg-surface px-3 py-1.5 text-sm text-text-primary placeholder:text-text-tertiary"
             />
             <button
@@ -200,7 +201,7 @@ export function AgentsPage(): ReactElement {
               disabled={installBusy || !installPath.trim()}
               className="rounded bg-accent-primary px-3 py-1.5 text-sm font-semibold text-on-accent disabled:opacity-50"
             >
-              {installBusy ? 'Installing…' : 'Install'}
+              {installBusy ? 'Instalando…' : 'Instalar'}
             </button>
           </div>
           {installResult !== null ? (
@@ -223,7 +224,7 @@ export function AgentsPage(): ReactElement {
                 : 'border border-border-subtle text-text-secondary'
             }`}
           >
-            All {counts !== null ? `(${counts.all})` : ''}
+            Todos {counts !== null ? `(${counts.all})` : ''}
           </button>
           {SOURCES.map(src => (
             <button
@@ -248,15 +249,15 @@ export function AgentsPage(): ReactElement {
           <section className="rounded-md border border-border-subtle bg-surface-elevated">
             <header className="border-b border-border-subtle px-4 py-2.5">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                Installed agents
+                Agentes instalados
               </h2>
             </header>
             {loading ? (
-              <div className="px-4 py-6 text-sm text-text-tertiary">Loading…</div>
+              <div className="px-4 py-6 text-sm text-text-tertiary">Carregando…</div>
             ) : agents.length === 0 ? (
               <EmptyState
-                title="No agents in this filter"
-                hint="Switch source above or install from a YAML file."
+                title="Nenhum agente neste filtro"
+                hint="Mude a fonte acima ou instale a partir de um arquivo YAML."
               />
             ) : (
               <ul className="divide-y divide-border-subtle">
@@ -289,8 +290,8 @@ export function AgentsPage(): ReactElement {
           <section className="rounded-md border border-border-subtle bg-surface-elevated">
             {selected === null ? (
               <EmptyState
-                title="Pick an agent on the left"
-                hint="Click any slug to see its system prompt, keywords, examples, and allowed tools."
+                title="Escolha um agente à esquerda"
+                hint="Clique em qualquer slug para ver o system prompt, keywords, examples e ferramentas permitidas."
               />
             ) : (
               <AgentDetail
@@ -305,20 +306,20 @@ export function AgentsPage(): ReactElement {
         <section className="mx-auto mt-6 max-w-[1080px] rounded-md border border-border-subtle bg-surface-elevated">
           <header className="flex items-center justify-between border-b border-border-subtle px-4 py-2.5">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-              Recent routing decisions
+              Decisões de roteamento recentes
             </h2>
             <button
               type="button"
               onClick={() => void refreshRuns()}
               className="text-[11px] text-text-secondary hover:text-text-primary"
             >
-              Refresh
+              Atualizar
             </button>
           </header>
           {runs.length === 0 ? (
             <div className="px-4 py-6 text-sm text-text-tertiary">
-              No routing decisions yet. Send a chat message and the orchestrator will log the
-              decision here.
+              Nenhuma decisão de roteamento ainda. Envie uma mensagem de chat e o orchestrator
+              registrará a decisão aqui.
             </div>
           ) : (
             <ul className="divide-y divide-border-subtle">
@@ -380,14 +381,14 @@ function AgentDetail({ agent, onUninstall }: AgentDetailProps): ReactElement {
             onClick={onUninstall}
             className="shrink-0 rounded border border-red-500/40 px-3 py-1 text-xs font-semibold text-red-300 hover:bg-red-500/10"
           >
-            Uninstall
+            Desinstalar
           </button>
         ) : (
           <span
             className="shrink-0 rounded border border-border-subtle px-3 py-1 text-[10px] uppercase tracking-wider text-text-tertiary"
-            title="Bundled agents re-seed on every server boot."
+            title="Agentes bundled são recriados a cada boot do servidor."
           >
-            Bundled — protected
+            Bundled — protegido
           </span>
         )}
       </header>
@@ -400,13 +401,13 @@ function AgentDetail({ agent, onUninstall }: AgentDetailProps): ReactElement {
         </Block>
 
         {agent.model !== null ? (
-          <Block label="Model">
+          <Block label="Modelo">
             <code className="text-xs text-text-primary">{agent.model}</code>
           </Block>
         ) : null}
 
         {agent.author !== null ? (
-          <Block label="Author">
+          <Block label="Autor">
             <span className="text-xs text-text-primary">{agent.author}</span>
           </Block>
         ) : null}
@@ -433,7 +434,7 @@ function AgentDetail({ agent, onUninstall }: AgentDetailProps): ReactElement {
         ) : null}
 
         {tools.length > 0 ? (
-          <Block label={`Allowed tools (${tools.length})`}>
+          <Block label={`Ferramentas permitidas (${tools.length})`}>
             <div className="flex flex-wrap gap-1.5">
               {tools.map(t => (
                 <code
@@ -448,7 +449,7 @@ function AgentDetail({ agent, onUninstall }: AgentDetailProps): ReactElement {
         ) : null}
 
         {examples.length > 0 ? (
-          <Block label={`Examples (${examples.length})`}>
+          <Block label={`Exemplos (${examples.length})`}>
             <ul className="space-y-1">
               {examples.map((ex, i) => (
                 <li key={i} className="text-xs italic text-text-secondary">

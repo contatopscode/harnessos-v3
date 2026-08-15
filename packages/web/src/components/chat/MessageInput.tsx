@@ -313,7 +313,9 @@ const messageInput = forwardRef<MessageInputHandle, MessageInputProps>(function 
             onPaste={handlePaste}
             disabled={disabled}
             placeholder={
-              dragging ? 'Drop files here...' : (disabledReason ?? 'Message HarnessOS...')
+              dragging
+                ? 'Solte os arquivos aqui...'
+                : (disabledReason ?? 'Mensagem para o HarnessOS...')
             }
             rows={1}
             className="flex-1 resize-none overflow-hidden rounded-lg border border-border bg-background px-4 py-2 text-sm leading-6 text-text-primary placeholder:text-text-tertiary focus:border-primary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"

@@ -69,7 +69,7 @@ export function RunDetailHeader({
           type="button"
           onClick={() => void copyRunId()}
           className="flex items-center gap-1 font-semibold transition-opacity hover:opacity-80"
-          title="Copy full run id"
+          title="Copiar id completo da execução"
         >
           <span className="brand-text">{shortRunId(run.id)}</span>
           <span aria-hidden className="font-mono text-[10px] text-text-tertiary">
@@ -116,7 +116,7 @@ export function RunDetailHeader({
         {typeof run.costUsd === 'number' ? (
           <span
             className="font-mono text-[12px] tabular-nums text-text-secondary"
-            title="Total agent cost"
+            title="Custo total do agente"
           >
             {formatCost(run.costUsd)}
           </span>
@@ -128,8 +128,8 @@ export function RunDetailHeader({
             onClick={() => {
               if (run.workingPath !== null) openInIde(run.workingPath);
             }}
-            title={`Open ${run.workingPath} in IDE`}
-            aria-label="Open in IDE"
+            title={`Abrir ${run.workingPath} na IDE`}
+            aria-label="Abrir na IDE"
             className="rounded p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
           >
             <span aria-hidden className="font-mono text-[12px] leading-none">
@@ -145,7 +145,7 @@ export function RunDetailHeader({
           conversation once the console chat route supports deep-linking. */}
       {run.userMessage !== '' ? (
         <div className="flex w-full min-w-0 items-baseline gap-2 text-[12px]">
-          <span className="shrink-0 font-mono text-text-tertiary">input</span>
+          <span className="shrink-0 font-mono text-text-tertiary">entrada</span>
           <span className="truncate font-mono text-text-secondary" title={run.userMessage}>
             {run.userMessage}
           </span>

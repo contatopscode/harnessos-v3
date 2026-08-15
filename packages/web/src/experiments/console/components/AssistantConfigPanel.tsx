@@ -121,14 +121,14 @@ export function AssistantConfigPanel(): ReactElement {
   const loadError = configError ?? providersError;
   if (loadError !== undefined) {
     return (
-      <SettingsSection title="Defaults">
+      <SettingsSection title="Padrões">
         <p className="font-mono text-[11px] text-error">{loadError.message}</p>
       </SettingsSection>
     );
   }
   if (form === null || providers === undefined) {
     return (
-      <SettingsSection title="Defaults">
+      <SettingsSection title="Padrões">
         <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
       </SettingsSection>
     );
@@ -157,7 +157,7 @@ export function AssistantConfigPanel(): ReactElement {
   };
 
   return (
-    <SettingsSection title="Defaults">
+    <SettingsSection title="Padrões">
       {/* Lead combo (#1998): "chat runs on [provider][model]" — the install
           row edits the default assistant + its default model
           (assistants.<p>.model, shared state with the grid row below); saved
@@ -219,7 +219,7 @@ export function AssistantConfigPanel(): ReactElement {
                 setUserDraft({ provider, model: '' });
               }}
               disabled={savingUserDefault}
-              aria-label="Your default assistant"
+              aria-label="Seu assistente padrão"
               className={`${SELECT_CLASS_COMPACT} py-[11px] pl-3.5 text-[13.5px]`}
             >
               <option value="">Inherit (this install)</option>

@@ -98,7 +98,7 @@ export function ProjectPalette({ open, onClose }: ProjectPaletteProps): ReactEle
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Pick a project"
+      aria-label="Escolher um projeto"
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[12vh]"
       onClick={onClose}
     >
@@ -116,8 +116,8 @@ export function ProjectPalette({ open, onClose }: ProjectPaletteProps): ReactEle
             setIndex(0);
           }}
           onKeyDown={onKey}
-          placeholder="Pick a project…"
-          aria-label="Pick a project"
+          placeholder="Escolha um projeto…"
+          aria-label="Escolher um projeto"
           role="combobox"
           aria-expanded="true"
           aria-controls={listboxId}
@@ -128,11 +128,11 @@ export function ProjectPalette({ open, onClose }: ProjectPaletteProps): ReactEle
         <ul
           id={listboxId}
           role="listbox"
-          aria-label="Projects"
+          aria-label="Projetos"
           className="max-h-[50vh] overflow-y-auto py-1"
         >
           {matches.length === 0 ? (
-            <li className="px-4 py-3 text-[12px] text-text-tertiary">No projects match.</li>
+            <li className="px-4 py-3 text-[12px] text-text-tertiary">Nenhum projeto encontrado.</li>
           ) : (
             matches.map((p, i) => {
               const selected = i === index;
@@ -175,9 +175,9 @@ export function ProjectPalette({ open, onClose }: ProjectPaletteProps): ReactEle
           )}
         </ul>
         <footer className="flex items-center justify-between border-t border-border px-4 py-2 font-mono text-[10px] text-text-tertiary">
-          <span>↑↓ move · ↵ open · esc cancel</span>
+          <span>↑↓ mover · ↵ abrir · esc cancelar</span>
           <span>
-            {matches.length} of {projects?.length ?? 0}
+            {matches.length} de {projects?.length ?? 0}
           </span>
         </footer>
       </div>

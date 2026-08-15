@@ -167,9 +167,9 @@ export function StreamToolbar({
                     onSelectNode(e.target.value);
                   }}
                   className={SELECT_CLASS}
-                  aria-label="Filter stream by node"
+                  aria-label="Filtrar stream por nó"
                 >
-                  <option value="all">All nodes</option>
+                  <option value="all">Todos os nós</option>
                   {nodeOptions.map(o => (
                     <option key={o.id} value={o.id}>
                       {o.name}

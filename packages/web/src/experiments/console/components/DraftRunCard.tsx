@@ -349,7 +349,7 @@ export function DraftRunCard({ projectId, projectCwd }: DraftRunCardProps): Reac
             onClick={collapse}
             disabled={submitting}
             className="ml-auto rounded p-1 text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
-            aria-label="Cancel draft"
+            aria-label="Cancelar rascunho"
             title="Cancel (Esc)"
           >
             <span aria-hidden className="text-[12px]">
@@ -433,7 +433,7 @@ export function DraftRunCard({ projectId, projectCwd }: DraftRunCardProps): Reac
                     ? `Max ${MAX_FILES.toString()} files attached`
                     : 'Attach files · drop or paste also work'
                 }
-                aria-label="Attach files"
+                aria-label="Anexar arquivos"
               >
                 <span aria-hidden className="text-[12px]">
                   📎

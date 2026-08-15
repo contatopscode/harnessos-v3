@@ -22,7 +22,7 @@ export function WorkingIndicator({
     <button
       type="button"
       onClick={onToggle}
-      title={expanded ? 'Hide activity' : 'Show what the agent is doing'}
+      title={expanded ? 'Ocultar atividade' : 'Mostrar o que o agente está fazendo'}
       className="mt-1.5 flex w-fit items-center gap-2 rounded-full border border-border bg-surface-inset px-3 py-1.5 text-[12px] text-text-secondary transition-colors hover:border-border-bright hover:text-text-primary"
     >
       <span
@@ -33,12 +33,12 @@ export function WorkingIndicator({
           borderTopColor: 'var(--running)',
         }}
       />
-      <span className="font-medium">Agent is working</span>
+      <span className="font-medium">Agente trabalhando</span>
       {activity !== null && activity !== undefined && activity !== '' ? (
         <span className="font-mono text-[11px] text-text-tertiary">· {activity}</span>
       ) : null}
       <span aria-hidden className="font-mono text-[10px] text-text-tertiary">
-        {expanded ? '▾ hide' : '▸ details'}
+        {expanded ? '▾ ocultar' : '▸ detalhes'}
       </span>
     </button>
   );

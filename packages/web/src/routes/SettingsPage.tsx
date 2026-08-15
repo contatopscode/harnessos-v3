@@ -431,6 +431,7 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
   const allProviderEntries: ProviderInfo[] = [
     ...(providers ?? []),
     ...Object.keys(config.assistants)
+      .filter(providerId => providerId !== 'claude')
       .filter(providerId => !(providers ?? []).some(provider => provider.id === providerId))
       .map(
         providerId =>
@@ -494,29 +495,7 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
               const providerSettings = getProviderSettings(provider.id);
 
               if (provider.id === 'claude') {
-                return (
-                  <div
-                    key={provider.id}
-                    className="grid grid-cols-[140px_1fr] items-center gap-2 text-sm"
-                  >
-                    <div className="font-medium">{provider.displayName}</div>
-                    <div className="text-muted-foreground">Built-in provider settings</div>
-
-                    <label htmlFor="claude-model">Model</label>
-                    <select
-                      id="claude-model"
-                      value={(providerSettings.model as string | undefined) ?? 'sonnet'}
-                      onChange={e => {
-                        updateProviderSettings('claude', { model: e.target.value });
-                      }}
-                      className={selectClass}
-                    >
-                      <option value="sonnet">sonnet</option>
-                      <option value="opus">opus</option>
-                      <option value="haiku">haiku</option>
-                    </select>
-                  </div>
-                );
+                return null;
               }
 
               if (provider.id === 'codex') {

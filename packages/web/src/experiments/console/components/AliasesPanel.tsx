@@ -73,14 +73,14 @@ export function AliasesPanel(): ReactElement {
   const loadError = configError ?? providersError;
   if (loadError !== undefined) {
     return (
-      <SettingsSection title="Model Aliases">
+      <SettingsSection title="Aliases de Modelos">
         <p className="font-mono text-[11px] text-error">{loadError.message}</p>
       </SettingsSection>
     );
   }
   if (rows === null || providers === undefined || config === undefined) {
     return (
-      <SettingsSection title="Model Aliases">
+      <SettingsSection title="Aliases de Modelos">
         <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
       </SettingsSection>
     );
@@ -125,7 +125,7 @@ export function AliasesPanel(): ReactElement {
   };
 
   return (
-    <SettingsSection title="Model Aliases">
+    <SettingsSection title="Aliases de Modelos">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <p className="min-w-[260px] flex-1 text-[12.5px] leading-relaxed text-text-tertiary">
           Custom <code className="font-mono">@name</code> refs usable in workflow{' '}

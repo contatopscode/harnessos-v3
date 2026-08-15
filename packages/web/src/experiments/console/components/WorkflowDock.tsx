@@ -149,7 +149,7 @@ function DockCard({ run }: { run: Run }): ReactElement {
       onClick={() => {
         if (run.projectId !== null) navigate(`/console/p/${run.projectId}/r/${run.id}`);
       }}
-      title="Open run logs"
+      title="Abrir logs da execução"
       className="flex items-center gap-3 rounded border border-border bg-surface px-3 py-2 text-left transition-colors hover:border-border-bright hover:bg-surface-hover"
     >
       <span

@@ -18,11 +18,11 @@ const ORDER: readonly {
   label: string;
   countKey: keyof RunCounts;
 }[] = [
-  { filter: 'running', label: 'Running', countKey: 'running' },
-  { filter: 'paused', label: 'Paused', countKey: 'paused' },
-  { filter: 'failed', label: 'Failed', countKey: 'failed' },
-  { filter: 'completed', label: 'Completed', countKey: 'completed' },
-  { filter: 'all', label: 'All', countKey: 'all' },
+  { filter: 'running', label: 'Em execução', countKey: 'running' },
+  { filter: 'paused', label: 'Pausadas', countKey: 'paused' },
+  { filter: 'failed', label: 'Falharam', countKey: 'failed' },
+  { filter: 'completed', label: 'Concluídas', countKey: 'completed' },
+  { filter: 'all', label: 'Todas', countKey: 'all' },
 ];
 
 export function FilterChips({ value, onChange, counts }: FilterChipsProps): ReactElement {

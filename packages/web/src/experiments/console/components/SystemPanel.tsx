@@ -24,14 +24,14 @@ export function SystemPanel(): ReactElement {
 
   if (healthError !== undefined) {
     return (
-      <SettingsSection title="System">
+      <SettingsSection title="Sistema">
         <p className="font-mono text-[11px] text-error">{healthError.message}</p>
       </SettingsSection>
     );
   }
   if (health === undefined) {
     return (
-      <SettingsSection title="System">
+      <SettingsSection title="Sistema">
         <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
       </SettingsSection>
     );
@@ -40,7 +40,7 @@ export function SystemPanel(): ReactElement {
   const platforms = health.activePlatforms ?? [];
 
   return (
-    <SettingsSection title="System">
+    <SettingsSection title="Sistema">
       <div className="flex flex-col divide-y divide-border">
         <Row label="status" value={health.status} ok={health.status === 'ok'} />
         <Row label="adapter" value={health.adapter} />

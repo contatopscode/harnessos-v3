@@ -102,14 +102,14 @@ export function ModelTiersPanel(): ReactElement {
   const loadError = configError ?? providersError;
   if (loadError !== undefined) {
     return (
-      <SettingsSection title="Model Tiers">
+      <SettingsSection title="Tiers de Modelo">
         <p className="font-mono text-[11px] text-error">{loadError.message}</p>
       </SettingsSection>
     );
   }
   if (form === null || providers === undefined || config === undefined) {
     return (
-      <SettingsSection title="Model Tiers">
+      <SettingsSection title="Tiers de Modelo">
         <p className="font-mono text-[11px] text-text-tertiary">Loading…</p>
       </SettingsSection>
     );
@@ -144,7 +144,7 @@ export function ModelTiersPanel(): ReactElement {
   };
 
   return (
-    <SettingsSection title="Model Tiers">
+    <SettingsSection title="Tiers de Modelo">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <p className="min-w-[260px] flex-1 text-[12.5px] leading-relaxed text-text-tertiary">
           Bundled workflows resolve <code className="font-mono">small</code> /{' '}

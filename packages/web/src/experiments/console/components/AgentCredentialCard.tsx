@@ -409,7 +409,7 @@ function BackendPicker({
           setQuery(e.target.value);
         }}
         placeholder={`Add backend… (search ${String(addable.length)} available)`}
-        aria-label="Search backends to connect"
+        aria-label="Buscar backends para conectar"
         className={INPUT_CLASS}
       />
       {searching && matches.length > 0 ? (

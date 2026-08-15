@@ -209,7 +209,7 @@ export function ProjectRow({
           env/⋯ actions can take its slot. */}
       {selected ? (
         <span
-          title="Active project"
+          title="Projeto ativo"
           className="inline-flex shrink-0 items-center gap-[5px] font-mono text-[10px] font-semibold uppercase tracking-[0.05em] text-success group-hover:hidden"
         >
           <i
@@ -237,8 +237,8 @@ export function ProjectRow({
               e.stopPropagation();
               onEditEnv();
             }}
-            title="Environment variables"
-            aria-label="Environment variables"
+            title="Variáveis de ambiente"
+            aria-label="Variáveis de ambiente"
             className="flex h-[29px] w-[29px] items-center justify-center rounded-lg text-text-tertiary transition-colors hover:bg-surface-hover hover:text-text-primary"
           >
             <KeyIcon />
@@ -252,8 +252,8 @@ export function ProjectRow({
                 e.stopPropagation();
                 setMenuOpen(v => !v);
               }}
-              title="More actions"
-              aria-label="More actions"
+              title="Mais ações"
+              aria-label="Mais ações"
               aria-expanded={menuOpen}
               className={`flex h-[29px] w-[29px] items-center justify-center rounded-lg transition-colors hover:bg-surface-hover hover:text-text-primary ${
                 menuOpen ? 'bg-surface-hover text-text-primary' : 'text-text-tertiary'

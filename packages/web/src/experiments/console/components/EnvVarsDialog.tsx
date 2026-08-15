@@ -283,7 +283,7 @@ function EnvVarsBody({ projectId, projectName, onClose }: BodyProps): ReactEleme
           <span aria-hidden className="text-accent-bright">
             +
           </span>
-          <span>Add variable</span>
+          <span>Adicionar variável</span>
         </button>
       )}
 

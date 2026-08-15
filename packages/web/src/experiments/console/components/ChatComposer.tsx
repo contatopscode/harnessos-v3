@@ -159,9 +159,9 @@ export function ChatComposer({
               onClick={() => {
                 fileInputRef.current?.click();
               }}
-              aria-label="Attach files"
+              aria-label="Anexar arquivos"
               disabled={disabled || files.length >= MAX_FILES}
-              title="Attach files"
+              title="Anexar arquivos"
               className="flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-md transition-colors hover:bg-[color:var(--surface-hover)] hover:text-text-primary disabled:cursor-default disabled:opacity-50"
             >
               <Paperclip className="h-5 w-5" />
@@ -179,7 +179,7 @@ export function ChatComposer({
             <button
               type="button"
               tabIndex={-1}
-              aria-label="Commands"
+              aria-label="Comandos"
               disabled
               title="Commands (coming soon)"
               className="flex h-[22px] items-center justify-center rounded-md px-[2px] text-[17px] leading-none transition-colors hover:bg-[color:var(--surface-hover)] hover:text-text-primary disabled:cursor-default disabled:opacity-50"
@@ -196,7 +196,7 @@ export function ChatComposer({
             }}
             onKeyDown={onKeyDown}
             rows={1}
-            placeholder={disabled ? (disabledReason ?? 'Waiting…') : 'Message the agent…'}
+            placeholder={disabled ? (disabledReason ?? 'Aguardando…') : 'Mensagem para o agente…'}
             className="min-h-0 flex-1 resize-none bg-transparent py-[7px] text-[14.5px] leading-[1.5] text-text-primary placeholder:text-text-tertiary focus:outline-none disabled:opacity-50"
             style={{ maxHeight: `${MAX_HEIGHT.toString()}px` }}
           />

@@ -21,7 +21,7 @@ export function ScopeToggle({
   return (
     <div
       role="group"
-      aria-label="Settings scope"
+      aria-label="Escopo das configurações"
       className="flex shrink-0 items-center gap-0.5 rounded-[9px] border border-border bg-surface-inset p-0.5"
     >
       <button
