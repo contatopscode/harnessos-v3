@@ -8,7 +8,7 @@ import { cors } from 'hono/cors';
 import type { WebAdapter } from '../adapters/web';
 import { rm, readFile, writeFile, unlink, mkdir, readdir, stat } from 'fs/promises';
 import { existsSync, readFileSync } from 'fs';
-import { normalize, join, sep, basename } from 'path';
+import { normalize, join, sep, basename, resolve } from 'path';
 import { randomUUID } from 'crypto';
 import type { Context } from 'hono';
 import type {
@@ -159,6 +159,35 @@ import {
   codebaseEnvVarParamsSchema,
   envVarMutationResponseSchema,
 } from './schemas/codebase.schemas';
+import {
+  agentSourceSchema,
+  agentSchema,
+  agentRunSchema,
+  listAgentsResponseSchema,
+  getAgentResponseSchema,
+  listAgentRunsResponseSchema,
+  installAgentBodySchema,
+  installAgentResponseSchema,
+  uninstallAgentResponseSchema,
+  routeAgentBodySchema,
+  routeAgentResponseSchema,
+  listAgentsQuerySchema,
+  listAgentRunsQuerySchema,
+  agentSlugParamsSchema,
+} from './schemas/agent.schemas';
+import {
+  listAgents,
+  getAgentBySlug,
+  deleteAgentBySlug,
+  recordAgentRun as recordAgentRunInApi,
+  listAgentRuns,
+  loadAllAgents,
+  loadAgentFromFile,
+  toAgentInsert,
+  upsertAgent,
+  routeMessage,
+  type AgentSource,
+} from '@archon/core';
 import {
   updateAssistantConfigBodySchema,
   updateAssistantConfigResponseSchema,
@@ -1315,6 +1344,173 @@ const getUpdateCheckRoute = createRoute({
     },
   },
 });
+
+// =========================================================================
+// Agent system routes (path A — Agents)
+// =========================================================================
+
+/** Helper: parse a JSON-as-TEXT column from an Agent row safely. */
+function parseJsonTextArray(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Helper: map an Agent row to the wire shape (parse JSON-as-TEXT columns). */
+function toWireAgent(agent: {
+  id: string;
+  slug: string;
+  name: string;
+  source: AgentSource;
+  version: string;
+  description: string;
+  system_prompt: string;
+  tags_json: string;
+  keywords_json: string;
+  examples_json: string;
+  allowed_tools_json: string;
+  model: string | null;
+  memory_ref: string | null;
+  author: string | null;
+  installed_at: string | Date;
+  updated_at: string | Date;
+}): z.infer<typeof agentSchema> {
+  return {
+    id: agent.id,
+    slug: agent.slug,
+    name: agent.name,
+    source: agent.source,
+    version: agent.version,
+    description: agent.description,
+    system_prompt: agent.system_prompt,
+    tags: parseJsonTextArray(agent.tags_json),
+    keywords: parseJsonTextArray(agent.keywords_json),
+    examples: parseJsonTextArray(agent.examples_json),
+    allowed_tools: parseJsonTextArray(agent.allowed_tools_json),
+    model: agent.model,
+    memory_ref: agent.memory_ref,
+    author: agent.author,
+    installed_at:
+      agent.installed_at instanceof Date ? agent.installed_at.toISOString() : agent.installed_at,
+    updated_at:
+      agent.updated_at instanceof Date ? agent.updated_at.toISOString() : agent.updated_at,
+  };
+}
+
+const listAgentsRoute = createRoute({
+  method: 'get',
+  path: '/api/agents',
+  tags: ['Agents'],
+  summary: 'List installed agents (bundled + local + installed from registry)',
+  request: { query: listAgentsQuerySchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: listAgentsResponseSchema } },
+      description: 'OK',
+    },
+    500: jsonError('Server error'),
+  },
+});
+
+const getAgentRoute = createRoute({
+  method: 'get',
+  path: '/api/agents/{slug}',
+  tags: ['Agents'],
+  summary: 'Get one agent by slug',
+  request: { params: agentSlugParamsSchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: getAgentResponseSchema } },
+      description: 'OK',
+    },
+    404: jsonError('Not found'),
+    500: jsonError('Server error'),
+  },
+});
+
+const installAgentRoute = createRoute({
+  method: 'post',
+  path: '/api/agents/install',
+  tags: ['Agents'],
+  summary: 'Install an agent from a YAML file on disk',
+  request: {
+    body: {
+      content: { 'application/json': { schema: installAgentBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: installAgentResponseSchema } },
+      description: 'Installed',
+    },
+    400: jsonError('Bad request'),
+    404: jsonError('File not found'),
+    500: jsonError('Server error'),
+  },
+});
+
+const uninstallAgentRoute = createRoute({
+  method: 'delete',
+  path: '/api/agents/{slug}',
+  tags: ['Agents'],
+  summary: 'Uninstall an agent (refuses bundled agents — they re-seed on boot)',
+  request: { params: agentSlugParamsSchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: uninstallAgentResponseSchema } },
+      description: 'OK',
+    },
+    400: jsonError('Refused (e.g. bundled)'),
+    404: jsonError('Not found'),
+    500: jsonError('Server error'),
+  },
+});
+
+const listAgentRunsRoute = createRoute({
+  method: 'get',
+  path: '/api/agents/runs',
+  tags: ['Agents'],
+  summary: 'List recent agent routing decisions (audit log)',
+  request: { query: listAgentRunsQuerySchema },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: listAgentRunsResponseSchema } },
+      description: 'OK',
+    },
+    500: jsonError('Server error'),
+  },
+});
+
+const routeAgentRoute = createRoute({
+  method: 'post',
+  path: '/api/agents/route',
+  tags: ['Agents'],
+  summary: 'Simulate routing for a message and record the decision',
+  request: {
+    body: {
+      content: { 'application/json': { schema: routeAgentBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: routeAgentResponseSchema } },
+      description: 'Routed',
+    },
+    400: jsonError('Bad request'),
+    500: jsonError('Server error'),
+  },
+});
+
+/** agentRunSchema and agentSourceSchema are re-exported via the response schemas
+ *  and used implicitly by Zod's type inference — they need to stay imported. */
+void agentRunSchema;
+void agentSourceSchema;
 
 /**
  * Register all /api/* routes on the Hono app.
@@ -2541,6 +2737,16 @@ export function registerApiRoutes(
       conv = await conversationDb.findConversationByPlatformId(conversationId);
     } catch (e: unknown) {
       getLog().error({ err: e, conversationId }, 'conversation_lookup_failed');
+      return c.json({ error: 'Conversation lookup failed' }, 500);
+    }
+
+    // Reject requests for non-existent conversations — the dispatchToOrchestrator
+    // path would otherwise auto-create a "ghost" conversation and burn tokens on
+    // a response that has no parent thread. This was bug #1 from the smoke test
+    // (verifier 2026-08-13).
+    if (conv === null) {
+      getLog().warn({ conversationId }, 'message_rejected_unknown_conversation');
+      return c.json({ error: 'Conversation not found' }, 404);
     }
 
     // Persist user message and pass DB ID to adapter for assistant message persistence
@@ -2586,6 +2792,25 @@ export function registerApiRoutes(
       extraContext,
       filesToCleanup
     );
+
+    // Emit explicit "done" event over SSE so non-web clients (curl, scripts,
+    // integration tests) can detect end-of-turn without inferring from stream
+    // closure. Web clients still rely on `conversation_lock: false` for
+    // backward compat, but this is the canonical signal. This was bug #3 from
+    // the smoke test (verifier 2026-08-13).
+    try {
+      await webAdapter.emitSSE(
+        conversationId,
+        JSON.stringify({
+          type: 'done',
+          conversationId,
+          timestamp: Date.now(),
+        })
+      );
+    } catch (sseDoneErr: unknown) {
+      getLog().warn({ err: sseDoneErr, conversationId }, 'sse_done_emit_failed');
+    }
+
     return c.json(result);
   });
 
@@ -4269,5 +4494,217 @@ export function registerApiRoutes(
     if (!BUNDLED_IS_BINARY) return c.json(noUpdate);
     const result = await checkForUpdate(appVersion);
     return c.json(result ?? noUpdate);
+  });
+
+  // ─── Agent routes (path A — Agents) ─────────────────────────────────────
+
+  // GET /api/agents — list installed agents with counts per source
+  registerOpenApiRoute(listAgentsRoute, async c => {
+    try {
+      // Query params are read via c.req.query() (matches the rest of the codebase)
+      // and validated against the schema manually so the OpenAPI spec stays
+      // accurate. Loose-typed strings are coerced through the schema's
+      // z.coerce.number() etc.
+      const rawSource = c.req.query('source');
+      const search = c.req.query('search') ?? undefined;
+      const limitRaw = c.req.query('limit');
+      const offsetRaw = c.req.query('offset');
+      const parsed = listAgentsQuerySchema.parse({
+        source: rawSource,
+        search,
+        limit: limitRaw !== undefined ? Number(limitRaw) : undefined,
+        offset: offsetRaw !== undefined ? Number(offsetRaw) : undefined,
+      });
+      const result = await listAgents({
+        source: parsed.source,
+        search: parsed.search,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
+      return c.json({
+        total: result.total,
+        counts: result.counts,
+        agents: result.agents.map(toWireAgent),
+      });
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.agents.list_failed');
+      return apiError(c, 500, 'Failed to list agents');
+    }
+  });
+
+  // GET /api/agents/runs — audit log of routing decisions
+  // MUST be registered BEFORE /api/agents/{slug} so the literal path matches
+  // first; otherwise the parameterized route wins and 'runs' becomes the slug.
+  registerOpenApiRoute(listAgentRunsRoute, async c => {
+    try {
+      const slug = c.req.query('slug') ?? undefined;
+      const limitRaw = c.req.query('limit');
+      const offsetRaw = c.req.query('offset');
+      const parsed = listAgentRunsQuerySchema.parse({
+        slug,
+        limit: limitRaw !== undefined ? Number(limitRaw) : undefined,
+        offset: offsetRaw !== undefined ? Number(offsetRaw) : undefined,
+      });
+      const result = await listAgentRuns({
+        agentSlug: parsed.slug,
+        limit: parsed.limit,
+        offset: parsed.offset,
+      });
+      return c.json({
+        total: result.total,
+        runs: result.runs.map(r => ({
+          id: r.id,
+          agent_slug: r.agent_slug,
+          conversation_id: r.conversation_id,
+          message_id: r.message_id,
+          decision: r.decision,
+          confidence: r.confidence,
+          reason: r.reason,
+          latency_ms: r.latency_ms,
+          user_message_preview: r.user_message_preview,
+          created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+        })),
+      });
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.agents.runs_failed');
+      return apiError(c, 500, 'Failed to list agent runs');
+    }
+  });
+
+  // GET /api/agents/:slug — one agent's full definition
+  registerOpenApiRoute(getAgentRoute, async c => {
+    const slug = c.req.param('slug') ?? '';
+    try {
+      const agent = await getAgentBySlug(slug);
+      if (!agent) {
+        return apiError(c, 404, 'Agent not found', `No installed agent with slug '${slug}'.`);
+      }
+      return c.json({ agent: toWireAgent(agent) });
+    } catch (err) {
+      getLog().error({ err: err as Error, slug }, 'api.agents.get_failed');
+      return apiError(c, 500, 'Failed to load agent');
+    }
+  });
+
+  // POST /api/agents/install — load YAML from disk, validate, upsert
+  registerOpenApiRoute(installAgentRoute, async c => {
+    const { path } = getValidatedBody(c, installAgentBodySchema);
+    const absolute = resolve(path);
+    if (!existsSync(absolute)) {
+      return apiError(c, 404, 'File not found', `No file at ${absolute}`);
+    }
+    try {
+      const loadResult = await loadAgentFromFile(absolute);
+      if (loadResult.error) {
+        return apiError(c, 400, 'Invalid agent file', loadResult.error.reason);
+      }
+      if (!loadResult.agent) {
+        return apiError(c, 400, 'Empty agent file', `No agent definition found in ${absolute}`);
+      }
+      const inserted = await upsertAgent(toAgentInsert(loadResult.agent));
+      return c.json({
+        ok: true,
+        slug: inserted.slug,
+        source: inserted.source,
+        version: inserted.version,
+        installed_at:
+          inserted.installed_at instanceof Date
+            ? inserted.installed_at.toISOString()
+            : inserted.installed_at,
+      });
+    } catch (err) {
+      getLog().error({ err: err as Error, path: absolute }, 'api.agents.install_failed');
+      return apiError(c, 500, 'Failed to install agent');
+    }
+  });
+
+  // DELETE /api/agents/:slug — refuses bundled agents (they re-seed on boot)
+  registerOpenApiRoute(uninstallAgentRoute, async c => {
+    const slug = c.req.param('slug') ?? '';
+    try {
+      const existing = await getAgentBySlug(slug);
+      if (!existing) {
+        return apiError(c, 404, 'Agent not found', `No installed agent with slug '${slug}'.`);
+      }
+      if (existing.source === 'bundled') {
+        return apiError(
+          c,
+          400,
+          'Refused',
+          `Cannot uninstall '${slug}' (source=bundled). Bundled agents re-seed on every server boot.`
+        );
+      }
+      const removed = await deleteAgentBySlug(slug);
+      return c.json({ ok: true, slug, removed });
+    } catch (err) {
+      getLog().error({ err: err as Error, slug }, 'api.agents.uninstall_failed');
+      return apiError(c, 500, 'Failed to uninstall agent');
+    }
+  });
+
+  // POST /api/agents/route — simulate routing for a message + record decision
+  registerOpenApiRoute(routeAgentRoute, async c => {
+    const { message, codebase } = getValidatedBody(c, routeAgentBodySchema);
+    try {
+      const { agents, errors } = await loadAllAgents();
+      if (agents.size === 0) {
+        return apiError(
+          c,
+          400,
+          'No agents available',
+          'Bootstrap has not run yet or no bundled agents exist.'
+        );
+      }
+      if (errors.length > 0) {
+        for (const e of errors) {
+          getLog().warn(
+            { sourcePath: e.sourcePath, reason: e.reason },
+            'api.agents.route_loader_warning'
+          );
+        }
+      }
+      const agentList = Array.from(agents.values());
+      const decision = await routeMessage(
+        {
+          rawMessage: message,
+          overrideSlug: null,
+          codebaseAgent: codebase ?? null,
+          conversationId: null,
+          messageId: null,
+          availableAgentSlugs: agentList.map(a => a.definition.slug),
+        },
+        agentList
+      );
+      // Best-effort audit — never throws the response. Mirrors the CLI's
+      // `agent run` behaviour so the user sees the same row in `archon agent runs`.
+      try {
+        await recordAgentRunInApi({
+          agentSlug: decision.chosenSlug,
+          conversationId: null,
+          messageId: null,
+          decision: decision.decision,
+          confidence: decision.confidence,
+          reason: decision.reason,
+          latencyMs: decision.latencyMs,
+          userMessagePreview: message.slice(0, 200),
+        });
+      } catch (err) {
+        getLog().warn(
+          { err: err as Error, slug: decision.chosenSlug },
+          'api.agents.route_record_failed'
+        );
+      }
+      return c.json({
+        message: message.slice(0, 200),
+        routed_to: decision.chosenSlug,
+        decision: decision.decision,
+        confidence: decision.confidence,
+        reason: decision.reason,
+        latency_ms: decision.latencyMs,
+      });
+    } catch (err) {
+      getLog().error({ err: err as Error }, 'api.agents.route_failed');
+      return apiError(c, 500, 'Failed to route message');
+    }
   });
 }

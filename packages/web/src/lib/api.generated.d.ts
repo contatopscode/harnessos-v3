@@ -3045,6 +3045,335 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/agents': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List installed agents (bundled + local + installed from registry) */
+    get: {
+      parameters: {
+        query?: {
+          source?: components['schemas']['AgentSource'];
+          search?: string;
+          limit?: number;
+          offset?: number | null;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ListAgentsResponse'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/agents/runs': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List recent agent routing decisions (audit log) */
+    get: {
+      parameters: {
+        query?: {
+          slug?: string;
+          limit?: number;
+          offset?: number | null;
+        };
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['ListAgentRunsResponse'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/agents/{slug}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get one agent by slug */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['GetAgentResponse'];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    /** Uninstall an agent (refuses bundled agents — they re-seed on boot) */
+    delete: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          slug: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['UninstallAgentResponse'];
+          };
+        };
+        /** @description Refused (e.g. bundled) */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/agents/install': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Install an agent from a YAML file on disk */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['InstallAgentBody'];
+        };
+      };
+      responses: {
+        /** @description Installed */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['InstallAgentResponse'];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description File not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/agents/route': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Simulate routing for a message and record the decision */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['RouteAgentBody'];
+        };
+      };
+      responses: {
+        /** @description Routed */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['RouteAgentResponse'];
+          };
+        };
+        /** @description Bad request */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+        /** @description Server error */
+        500: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['Error'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3344,6 +3673,11 @@ export interface components {
       worktree?: {
         enabled?: boolean;
       };
+      container?: {
+        enabled?: boolean;
+        /** @enum {string} */
+        write_back?: 'approve' | 'auto';
+      };
       mutates_checkout?: boolean;
       persist_sessions?: boolean;
       tags?: string[];
@@ -3535,6 +3869,13 @@ export interface components {
           maxTurns?: number;
         };
       };
+      pi?: {
+        enableExtensions?: boolean;
+        interactive?: boolean;
+        extensionFlags?: {
+          [key: string]: boolean | string;
+        };
+      };
       /** @enum {string} */
       effort?: 'low' | 'medium' | 'high' | 'max';
       thinking?:
@@ -3600,6 +3941,7 @@ export interface components {
         until_bash?: string;
         interactive?: boolean;
         gate_message?: string;
+        signal_completes?: boolean;
         prompt: string;
       };
       loop_group?: {
@@ -3610,6 +3952,7 @@ export interface components {
         until_bash?: string;
         interactive?: boolean;
         gate_message?: string;
+        signal_completes?: boolean;
         nodes: components['schemas']['DagNode'][];
       };
       approval?: {
@@ -3621,6 +3964,8 @@ export interface components {
         };
       };
       cancel?: string;
+      include?: string;
+      with?: unknown;
       script?: string;
       /** @enum {string} */
       runtime?: 'bun' | 'uv';
@@ -3917,6 +4262,90 @@ export interface components {
       currentVersion: string;
       latestVersion: string;
       releaseUrl: string;
+    };
+    ListAgentsResponse: {
+      total: number;
+      counts: components['schemas']['AgentCounts'];
+      agents: components['schemas']['Agent'][];
+    };
+    AgentCounts: {
+      all: number;
+      bundled: number;
+      local: number;
+      installed: number;
+    };
+    Agent: {
+      id: string;
+      slug: string;
+      name: string;
+      source: components['schemas']['AgentSource'];
+      version: string;
+      description: string;
+      system_prompt: string;
+      tags: string[];
+      keywords: string[];
+      examples: string[];
+      allowed_tools: string[];
+      model: string | null;
+      memory_ref: string | null;
+      author: string | null;
+      installed_at: string;
+      updated_at: string;
+    };
+    /** @enum {string} */
+    AgentSource: 'bundled' | 'local' | 'installed';
+    ListAgentRunsResponse: {
+      total: number;
+      runs: components['schemas']['AgentRun'][];
+    };
+    AgentRun: {
+      id: string;
+      agent_slug: string;
+      conversation_id: string | null;
+      message_id: string | null;
+      decision: components['schemas']['RoutingDecision'];
+      confidence: number;
+      reason: string;
+      latency_ms: number;
+      user_message_preview: string;
+      created_at: string;
+    };
+    /** @enum {string} */
+    RoutingDecision:
+      | 'override'
+      | 'codebase_default'
+      | 'auto_heuristic'
+      | 'auto_llm'
+      | 'default_fallback';
+    GetAgentResponse: {
+      agent: components['schemas']['Agent'];
+    };
+    InstallAgentResponse: {
+      ok: boolean;
+      slug: string;
+      source: components['schemas']['AgentSource'];
+      version: string;
+      installed_at: string;
+    };
+    InstallAgentBody: {
+      path: string;
+    };
+    UninstallAgentResponse: {
+      ok: boolean;
+      slug: string;
+      removed: boolean;
+    };
+    RouteAgentResponse: {
+      message: string;
+      routed_to: string;
+      decision: components['schemas']['RoutingDecision'];
+      confidence: number;
+      reason: string;
+      latency_ms: number;
+    };
+    RouteAgentBody: {
+      message: string;
+      codebase?: string | null;
     };
   };
   responses: never;

@@ -10,6 +10,7 @@ import { RunDetailPage } from './routes/RunDetailPage';
 import { ChatPage } from './routes/ChatPage';
 import { PreviewPage } from './routes/PreviewPage';
 import { SettingsPage } from './routes/SettingsPage';
+import { AgentsPage } from './routes/AgentsPage';
 import { invalidate } from './store/cache';
 import { K } from './store/keys';
 import { useKeymap, type Binding } from './lib/keymap';
@@ -54,6 +55,13 @@ export function ConsoleApp(): ReactElement {
           navigate('/console/settings');
         },
       },
+      {
+        keys: ['a'],
+        label: 'Open agents',
+        run: (): void => {
+          navigate('/console/agents');
+        },
+      },
     ],
     [navigate]
   );
@@ -74,6 +82,7 @@ export function ConsoleApp(): ReactElement {
           <Routes>
             <Route index element={<RunsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="agents" element={<AgentsPage />} />
             <Route path="builder" element={<BuilderRoute />} />
             <Route path="_preview" element={<PreviewPage />} />
             <Route path="p/:projectId" element={<RunsPage />} />
