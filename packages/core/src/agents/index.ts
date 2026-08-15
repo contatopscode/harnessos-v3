@@ -23,3 +23,10 @@ export type { LlmClassifier } from './router';
 
 export { bootstrapBundledAgents } from './bootstrap';
 export type { BootstrapResult } from './bootstrap';
+
+export {
+  resolveAgentForMessage,
+  buildAgentPromptSection,
+  type AgentResolution,
+  type AgentResolutionResult,
+} from './orchestrator-integration';

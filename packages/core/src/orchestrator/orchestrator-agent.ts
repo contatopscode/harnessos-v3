@@ -33,6 +33,12 @@ import { execFileAsync, findRepoRoot, syncWorkspace, toBranchName, toRepoPath } 
 import type { WorkspaceSyncResult } from '@archon/git';
 import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
 import { findWorkflow, resolveWorkflowName } from '@archon/workflows/router';
+import {
+  resolveAgentForMessage,
+  buildAgentPromptSection,
+  type AgentResolution,
+} from '../agents/orchestrator-integration';
+import { recordAgentRun as recordAgentRunInDb } from '../db/agent-runs';
 import { executeWorkflow, hydrateResumableRun } from '@archon/workflows/executor';
 import {
   assertWorkflowRequirementsMet,
@@ -1378,6 +1384,24 @@ export async function handleMessage(
       cwd = await ensureArchonWorkspacesPath();
     }
 
+    // Resolve the active agent for this message (path A — Agents). Loads all
+    // agents, runs the 5-stage router, and strips any `agent:slug` prefix
+    // from the user-visible message. Failures degrade gracefully: the chat
+    // continues with the default persona (no agent) and a warn log.
+    let agentResolution: AgentResolution | null = null;
+    const agentResult = await resolveAgentForMessage(message, {
+      conversationId: conversation.id,
+      // codebaseDefaultSlug: future — pin a default agent per codebase via
+      // .archon/config.yaml `agents.default`. The router already supports it.
+    });
+    if (!agentResult.skip) {
+      agentResolution = agentResult.resolution;
+      // Override the working message for the rest of the turn. The AI never
+      // sees the `agent:foo` prefix — it only sees the persona injected via
+      // the system prompt below.
+      message = agentResolution.strippedMessage;
+    }
+
     // 4. Update activity and get/create session
     await db.touchConversation(conversation.id);
     let session = await sessionDb.getActiveSession(conversation.id);
@@ -1514,6 +1538,15 @@ export async function handleMessage(
     // Claude supports the preset object for prompt caching; other providers
     // need a plain string (Pi coerces non-string to undefined, Codex ignores it).
     let systemAppend = buildOrchestratorSystemAppend(conversation, codebases, workflows);
+    // Inject the active agent's persona (path A — Agents). The section is
+    // appended LAST so it sits at the bottom of the system prompt where the
+    // model treats it as the most-recent instruction. For Claude we use the
+    // `append` field of the preset so the agent prompt is part of the
+    // cached prefix (won't bust the cache on every turn — the persona is
+    // bounded by the agent's `systemPrompt` string which is stable).
+    if (agentResolution !== null) {
+      systemAppend += `\n\n${buildAgentPromptSection(agentResolution.agent)}`;
+    }
     // Capabilities are only consulted for project-scoped chats (both the native tool
     // and the CLI pointer are scoped features), so look them up lazily — this also
     // avoids a registry lookup (and a throw for an unregistered provider) on the
@@ -1674,6 +1707,35 @@ export async function handleMessage(
         getLog().warn(
           { err: err as Error, conversationId, codebaseId: conversation.codebase_id },
           'orchestrator.post_message_reminder_failed'
+        );
+      }
+    }
+
+    // Record the routing decision in agent_runs (path A — Agents). The audit
+    // row is written ONLY on the success path (matches db/agent-runs.ts contract:
+    // "never on error paths, so the audit reflects what actually happened").
+    // A failure here must never fail the chat turn — the user already got
+    // their answer. We capture the original `message` (with the override
+    // prefix) so the audit shows what the user actually wrote, not the
+    // stripped version the model saw.
+    if (agentResolution !== null) {
+      try {
+        await recordAgentRunInDb({
+          agentSlug: agentResolution.routing.chosenSlug,
+          conversationId: conversation.id,
+          messageId: null,
+          decision: agentResolution.routing.decision,
+          confidence: agentResolution.routing.confidence,
+          reason: agentResolution.routing.reason,
+          latencyMs: agentResolution.routing.latencyMs,
+          userMessagePreview: agentResolution.overrideAttempt
+            ? `${agentResolution.overrideAttempt}: ${agentResolution.strippedMessage.slice(0, 180 - agentResolution.overrideAttempt.length - 2)}`
+            : agentResolution.strippedMessage.slice(0, 200),
+        });
+      } catch (err) {
+        getLog().warn(
+          { err: err as Error, conversationId, slug: agentResolution.routing.chosenSlug },
+          'orchestrator.agent_run_record_failed'
         );
       }
     }
