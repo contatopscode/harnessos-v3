@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactElement } from 'react';
+import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
 import * as skill from '../skills';
 import type { Project } from '../primitives/project';
 
@@ -89,14 +89,14 @@ function parseGitHubUrl(value: string): { owner: string; repo: string } {
  * indicator, 46px icon input with magenta focus ring, and a live clone-path
  * hint derived from the typed URL. Esc, ✕, Cancel, and the backdrop close it.
  *
- * "Local path" mode extra affordances:
- *   - "Browse…" button: uses the browser's native folder picker (Chrome/Edge).
- *     Note: the File System Access API returns a handle name, not the full
- *     absolute path, so this only fills the last segment. The user still
- *     needs the parent path from somewhere else (text input, history).
- *   - "Create new folder" toggle: inline form (parent + name) → server
- *     `mkdir -p` → fills the path input with the new full path. Works in
- *     every browser, no native picker required.
+ * "Local path" mode: the field accepts a folder path on disk. The "Procurar…"
+ * button opens the native folder picker (Chrome/Edge 86+) — i.e. the OS
+ * file dialog (Finder on macOS, Explorer on Windows), where the user can
+ * navigate, create new folders, and pick one. The dialog returns the folder
+ * name (browsers don't expose absolute paths for security), so the user
+ * must have the parent path in the text field first; the picked name gets
+ * appended. If the field is empty, "Procurar…" tells the user to type the
+ * parent path first instead of producing an unusable bare-folder-name value.
  */
 export function AddProjectDialog({
   open,
@@ -108,14 +108,6 @@ export function AddProjectDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Local-path helpers
-  const [showCreate, setShowCreate] = useState(false);
-  const [newParent, setNewParent] = useState('');
-  const [newName, setNewName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const createNameRef = useRef<HTMLInputElement | null>(null);
-
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
@@ -126,16 +118,6 @@ export function AddProjectDialog({
       window.removeEventListener('keydown', onKey);
     };
   }, [open, onClose]);
-
-  // When the user types a full path, pre-fill the create-form parent.
-  // When the user opens the create form with nothing typed, default to home.
-  useEffect(() => {
-    if (!showCreate) return;
-    if (newParent !== '') return;
-    if (value.trim() !== '') {
-      setNewParent(parentDir(value.trim()));
-    }
-  }, [showCreate, value, newParent]);
 
   if (!open) return null;
 
@@ -153,9 +135,6 @@ export function AddProjectDialog({
         : await skill.addProjectByPath(value.trim());
       onAdded(project);
       setValue('');
-      setNewParent('');
-      setNewName('');
-      setShowCreate(false);
       onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -169,9 +148,22 @@ export function AddProjectDialog({
    * FileSystemDirectoryHandle whose `.name` is just the folder name (not
    * the absolute path — browsers won't expose that for security). We use
    * the typed parent path + the picked name to build the full path.
+   *
+   * The picker opens the OS file dialog (Finder on macOS, Explorer on
+   * Windows), where the user can create new folders natively. The picked
+   * folder MUST already exist — we don't mkdir here. If the user has not
+   * typed a parent path yet, we bail with an actionable hint instead of
+   * producing a bare-folder-name value that the server can't resolve.
    */
   const onBrowse = async (): Promise<void> => {
     setError(null);
+    const baseParent = value.trim() !== '' ? parentDir(value.trim()) : '';
+    if (baseParent === '') {
+      setError(
+        'Digite o caminho da pasta pai (ex.: /Users/voce/projetos) antes de procurar. O seletor nativo só retorna o nome da pasta — você pode criar a nova pasta direto no Finder antes de selecioná-la.'
+      );
+      return;
+    }
     try {
       // showDirectoryPicker may exist but not be callable (e.g. iframe without
       // permission). Wrap in a function reference so TS doesn't complain.
@@ -183,58 +175,12 @@ export function AddProjectDialog({
         return;
       }
       const handle = await picker({ mode: 'read' });
-      const baseParent = value.trim() !== '' ? parentDir(value.trim()) : '';
-      const next = baseParent !== '' ? joinPath(baseParent, handle.name) : handle.name;
+      const next = joinPath(baseParent, handle.name);
       setValue(next);
     } catch (err) {
       // User-cancelled (AbortError) — silent. Other errors: surface them.
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Seletor de pasta falhou');
-    }
-  };
-
-  /**
-   * Inline "Create new folder" submit. Hits POST /api/codebases/mkdir,
-   * then pre-fills the main path input with the new full path so the
-   * user can immediately click "Add project" to register it.
-   */
-  const onCreateFolder = async (e: FormEvent): Promise<void> => {
-    e.preventDefault();
-    setCreateError(null);
-    const name = newName.trim();
-    if (name === '') {
-      setCreateError('O nome da pasta é obrigatório');
-      createNameRef.current?.focus();
-      return;
-    }
-    const parent = newParent.trim();
-    if (parent === '') {
-      setCreateError('O caminho pai é obrigatório');
-      return;
-    }
-    const fullPath = joinPath(parent, name);
-    setCreating(true);
-    try {
-      const res = await fetch('/api/codebases/mkdir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: fullPath }),
-      });
-      if (!res.ok) {
-        const body = await res.text();
-        const truncated = body.length > 200 ? body.slice(0, 200) + '...' : body;
-        throw new Error(`Servidor retornou ${res.status}: ${truncated}`);
-      }
-      // Server returned { ok, path }; use the canonical resolved path
-      const data = (await res.json()) as { ok: boolean; path: string };
-      setValue(data.path);
-      setShowCreate(false);
-      setNewName('');
-      // Keep newParent in place so the user can create siblings quickly.
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : 'Falha ao criar pasta');
-    } finally {
-      setCreating(false);
     }
   };
 
@@ -357,99 +303,14 @@ export function AddProjectDialog({
           ) : null}
         </div>
 
-        {/* Hint + create-new-folder toggle (local-path mode only) */}
+        {/* Hint text (local-path vs GitHub URL) */}
         {!isGit ? (
-          <div className="mt-[11px] space-y-2 text-[12.5px] leading-relaxed text-text-tertiary">
-            <p>
-              HarnessOS vai usar esta pasta existente como origem do projeto — nada é copiado nem
-              movido.
-            </p>
-            {!showCreate ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCreate(true);
-                  setTimeout(() => createNameRef.current?.focus(), 50);
-                }}
-                className="inline-flex items-center gap-1.5 rounded border border-dashed px-2 py-1 text-[11.5px] font-semibold text-text-secondary transition-colors hover:border-solid hover:bg-surface-hover hover:text-text-primary"
-                style={{ borderColor: 'var(--border-bright)' }}
-              >
-                <span aria-hidden>+</span> Criar nova pasta
-              </button>
-            ) : (
-              <div
-                className="rounded-[10px] border bg-surface p-3"
-                style={{ borderColor: 'var(--border-bright)' }}
-              >
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-text-tertiary">
-                    Nova pasta
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCreate(false);
-                      setCreateError(null);
-                    }}
-                    className="text-[11px] text-text-tertiary hover:text-text-primary"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    value={newParent}
-                    onChange={e => {
-                      setNewParent(e.target.value);
-                    }}
-                    placeholder="Caminho pai — ex.: ~/projetos ou /Users/voce/trabalho"
-                    spellCheck={false}
-                    className="block w-full rounded-md border bg-surface-elevated px-2.5 py-1.5 font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
-                    style={{ borderColor: 'var(--border)' }}
-                    disabled={creating}
-                  />
-                  <div className="flex items-center gap-1.5 font-mono text-[12.5px] text-text-tertiary">
-                    <span aria-hidden>+</span>
-                    <input
-                      ref={createNameRef}
-                      type="text"
-                      value={newName}
-                      onChange={e => {
-                        setNewName(e.target.value);
-                      }}
-                      placeholder="nome-da-pasta"
-                      spellCheck={false}
-                      className="flex-1 rounded-md border bg-surface-elevated px-2.5 py-1.5 font-mono text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary"
-                      style={{ borderColor: 'var(--border)' }}
-                      disabled={creating}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          void onCreateFolder(e as unknown as FormEvent);
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      onClick={e => {
-                        void onCreateFolder(e as unknown as FormEvent);
-                      }}
-                      disabled={creating || newName.trim() === ''}
-                      className="rounded-md bg-accent-primary px-2.5 py-1.5 text-[11.5px] font-bold text-on-accent disabled:opacity-50"
-                    >
-                      {creating ? 'Criando…' : 'Criar'}
-                    </button>
-                  </div>
-                </div>
-                {createError !== null ? (
-                  <p className="mt-2 rounded border border-error/40 bg-error/10 px-2 py-1.5 font-mono text-[10.5px] text-error">
-                    {createError}
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
+          <p className="mt-[11px] text-[12.5px] leading-relaxed text-text-tertiary">
+            HarnessOS vai usar esta pasta existente como origem do projeto — nada é copiado nem
+            movido. O botão <strong>Procurar…</strong> abre o Finder (ou Explorador de Arquivos),
+            onde você pode criar uma nova pasta antes de selecioná-la. A pasta precisa já existir no
+            momento de registrar.
+          </p>
         ) : (
           <p className="mt-[11px] text-[12.5px] leading-relaxed text-text-tertiary">
             HarnessOS vai clonar este repo em{' '}

@@ -475,6 +475,13 @@ export async function registerRepository(localPath: string): Promise<RegisterRes
  * `ENOENT` really is "does not exist", but `EACCES`/`ENOTDIR`/`ELOOP` are not,
  * and mislabeling them "Path does not exist" sends the user chasing a typo
  * instead of a permissions/symlink problem. The raw errno message is preserved.
+ *
+ * ENOENT in particular: a bare "Path does not exist" is technically correct
+ * but operationally useless — the user just clicked an "Add project" button
+ * and has no next step. Append an actionable hint pointing at the native
+ * folder picker (the AddProjectDialog "Procurar…" button), which on
+ * Chrome/Edge opens Finder/Explorer where the user can create the folder
+ * before selecting it.
  */
 function pathValidationError(path: string, error: Error): Error {
   const reasonByCode: Record<string, string> = {
@@ -484,7 +491,11 @@ function pathValidationError(path: string, error: Error): Error {
   };
   const code = (error as NodeJS.ErrnoException).code ?? '';
   const reason = reasonByCode[code] ?? 'Path does not exist';
-  return new Error(`${reason}: ${path} (${error.message})`);
+  const hint =
+    code === 'ENOENT'
+      ? ' — clique em "Procurar…" no diálogo para abrir o Finder/Explorador e criar a pasta antes de selecioná-la.'
+      : '';
+  return new Error(`${reason}: ${path}${hint} (${error.message})`);
 }
 
 /**
