@@ -19,7 +19,15 @@
  *     `recordAgentRun()` AFTER the AI turn completes (success path only).
  */
 import { createLogger } from '@archon/paths';
-import { loadAllAgents, parseAgentOverride, routeMessage, type LoadedAgent } from './index';
+import {
+  buildM3Classifier,
+  isM3ClassifierEnabled,
+  loadAllAgents,
+  parseAgentOverride,
+  routeMessage,
+  type LlmClassifier,
+  type LoadedAgent,
+} from './index';
 import type { RoutingResult } from '../schemas/agent';
 
 // ---------------------------------------------------------------------------
@@ -109,6 +117,29 @@ export async function resolveAgentForMessage(
 
   const agentList = Array.from(loadResult.agents.values());
   const startedAt = performance.now();
+
+  // Stage 4 of the router is the LLM classifier — only built when the
+  // feature flag is on. `isLive: false` (no MINIMAX_API_KEY) is treated
+  // as "don't wire this in" — the router then skips stage 4 cleanly.
+  // We resolve the classifier ONCE per process so we don't re-check the
+  // env var on every chat turn.
+  let llmClassify: LlmClassifier | undefined;
+  if (isM3ClassifierEnabled()) {
+    const handle = buildM3Classifier();
+    if (handle.isLive) {
+      llmClassify = handle.classifier;
+      getLog().debug(
+        { conversationId: options.conversationId },
+        'agents.orchestrator.m3_classifier_wired'
+      );
+    } else {
+      getLog().debug(
+        { conversationId: options.conversationId },
+        'agents.orchestrator.m3_classifier_disabled_no_key'
+      );
+    }
+  }
+
   let routing: RoutingResult;
   try {
     routing = await routeMessage(
@@ -120,7 +151,8 @@ export async function resolveAgentForMessage(
         messageId: null,
         availableAgentSlugs: agentList.map(a => a.definition.slug),
       },
-      agentList
+      agentList,
+      { llmClassify }
     );
   } catch (err) {
     getLog().warn(

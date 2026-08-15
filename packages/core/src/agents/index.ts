@@ -21,6 +21,13 @@ export type { LoadedAgent, AgentLoadError, AgentOverride, AgentLoadResult } from
 export { routeMessage, parseAgentOverride } from './router';
 export type { LlmClassifier } from './router';
 
+export {
+  buildM3Classifier,
+  isM3ClassifierEnabled,
+  type M3ClassifierOptions,
+  type M3ClassifierHandle,
+} from './m3-classifier';
+
 export { bootstrapBundledAgents } from './bootstrap';
 export type { BootstrapResult } from './bootstrap';
 
@@ -30,3 +37,10 @@ export {
   type AgentResolution,
   type AgentResolutionResult,
 } from './orchestrator-integration';
+
+export {
+  buildMemoryPromptSection,
+  detectMemorySignal,
+  persistMemorySignal,
+  type MemorySignal,
+} from './memory-integration';
