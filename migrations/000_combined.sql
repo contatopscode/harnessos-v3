@@ -631,21 +631,23 @@ COMMENT ON TABLE remote_agent_agent_runs IS
 -- Memory system (path B — Memory + RAG) [from migration 025]
 -- ============================================================================
 -- Append-only store of facts the agent should remember across sessions.
--- Searchable via SQLite FTS5 (bundled in bun:sqlite, zero new infra).
+-- Searchable via Postgres tsvector + GIN index (requires pgcrypto for
+-- gen_random_uuid(); the deploy bundle runs CREATE EXTENSION pgcrypto
+-- before this file is applied).
 -- Scope model: 'user' (global) | 'agent' (per-persona) | 'project' (per-codebase)
 -- | 'conversation' (per-chat). A memory can match multiple scopes — the
 -- recall layer queries each scope and unions the top-N results.
 
 CREATE TABLE IF NOT EXISTS remote_agent_memories (
-  id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   scope VARCHAR(16) NOT NULL CHECK (scope IN ('user', 'agent', 'project', 'conversation')),
   scope_id TEXT,
   kind VARCHAR(32) NOT NULL CHECK (kind IN ('preference', 'fact', 'project_context', 'feedback', 'note')),
   content TEXT NOT NULL,
   source VARCHAR(16) NOT NULL DEFAULT 'manual' CHECK (source IN ('chat', 'manual', 'imported')),
   confidence REAL NOT NULL DEFAULT 1.0 CHECK (confidence >= 0 AND confidence <= 1),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  last_used_at TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ,
   use_count INTEGER NOT NULL DEFAULT 0 CHECK (use_count >= 0)
 );
 
@@ -653,22 +655,25 @@ CREATE INDEX IF NOT EXISTS idx_memories_scope ON remote_agent_memories(scope, sc
 CREATE INDEX IF NOT EXISTS idx_memories_kind ON remote_agent_memories(kind);
 CREATE INDEX IF NOT EXISTS idx_memories_created_at ON remote_agent_memories(created_at DESC);
 
-CREATE VIRTUAL TABLE IF NOT EXISTS remote_agent_memories_fts USING fts5(
-  content,
-  content='remote_agent_memories',
-  content_rowid='rowid',
-  tokenize='porter unicode61 remove_diacritics 2'
-);
+-- Postgres full-text search via tsvector + GIN. The content_tsv column is
+-- auto-maintained by the trigger below (AFTER INSERT/UPDATE/DELETE).
+ALTER TABLE remote_agent_memories
+  ADD COLUMN IF NOT EXISTS content_tsv TSVECTOR;
+CREATE INDEX IF NOT EXISTS idx_memories_content_tsv
+  ON remote_agent_memories USING GIN (content_tsv);
 
-CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON remote_agent_memories BEGIN
-  INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
+CREATE OR REPLACE FUNCTION memories_content_tsv_update() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  NEW.content_tsv :=
+    setweight(to_tsvector('simple', coalesce(NEW.content, '')), 'A');
+  RETURN NEW;
 END;
-CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON remote_agent_memories BEGIN
-  INSERT INTO remote_agent_memories_fts(remote_agent_memories_fts, rowid, content)
-    VALUES('delete', old.rowid, old.content);
-END;
-CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON remote_agent_memories BEGIN
-  INSERT INTO remote_agent_memories_fts(remote_agent_memories_fts, rowid, content)
-    VALUES('delete', old.rowid, old.content);
-  INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
-END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS memories_content_tsv_trg ON remote_agent_memories;
+CREATE TRIGGER memories_content_tsv_trg
+  BEFORE INSERT OR UPDATE ON remote_agent_memories
+  FOR EACH ROW EXECUTE FUNCTION memories_content_tsv_update();
