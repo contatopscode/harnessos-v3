@@ -1,13 +1,19 @@
 # Tables created by deploy/postgres/harnessos-postgres-init.sql
-# 27 rows expected (after successful migrate.sh run, query
+# 21 rows expected (after successful migrate.sh run, query
 # information_schema.tables for `remote_agent%` and you should see exactly
 # these names):
 #
-# Application tables (21):
-remote_agent_codebases
+remote_agent_agent_runs
+remote_agent_agents
+remote_agent_auth_account
+remote_agent_auth_session
+remote_agent_auth_user
+remote_agent_auth_verification
 remote_agent_codebase_env_vars
+remote_agent_codebases
 remote_agent_conversations
 remote_agent_isolation_environments
+remote_agent_memories
 remote_agent_messages
 remote_agent_sessions
 remote_agent_user_ai_prefs
@@ -18,18 +24,10 @@ remote_agent_users
 remote_agent_workflow_events
 remote_agent_workflow_node_sessions
 remote_agent_workflow_runs
-# (Some of the above appear in migrations 1–20 only; the rest are added
-#  by the migration runner itself, which keeps them idempotent.)
-#
-# Migration 024 (Agents, 2):
-remote_agent_agents
-remote_agent_agent_runs
-#
-# Migration 025 (Memory, 1):
-remote_agent_memories
-#
-# Better Auth (4, created only on Postgres — opt-in web login):
-remote_agent_auth_account
-remote_agent_auth_session
-remote_agent_auth_user
-remote_agent_auth_verification
+
+# Verify with:
+#   PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" \
+#     -d "$DB_NAME" -tA -c "SELECT table_name FROM information_schema.tables \
+#       WHERE table_schema='public' AND table_name LIKE 'remote_agent%' \
+#       ORDER BY table_name;"
+# Then `diff` the output against this file. Order matters for the diff.
