@@ -5,6 +5,7 @@ import { listConversations, listWorkflowRuns, getCodebaseEnvironments } from '@/
 import type { WorkflowRunResponse, IsolationEnvironment } from '@/lib/api';
 import { ConversationItem } from '@/components/conversations/ConversationItem';
 import { WorkflowInvoker } from '@/components/sidebar/WorkflowInvoker';
+import { GitTurboPanel } from '@/components/sidebar/GitTurboPanel';
 import { formatDuration } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
@@ -121,6 +122,10 @@ export function ProjectDetail({
       </button>
 
       <WorkflowInvoker codebaseId={codebaseId} />
+
+      <div className="mx-1">
+        <GitTurboPanel codebaseId={codebaseId} />
+      </div>
 
       {/* Conversations section */}
       <div>

@@ -488,6 +488,44 @@ export async function deleteCodebaseEnvVar(
   );
 }
 
+// Git Turbo — always-on versioned working state.
+export interface CommitSummary {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  author: string;
+  timestamp: number;
+}
+
+export interface GitLogResult {
+  branch: string;
+  totalCommits: number;
+  commits: CommitSummary[];
+  dirty: boolean;
+}
+
+export async function getCodebaseGitLog(codebaseId: string): Promise<GitLogResult> {
+  return fetchJSON<GitLogResult>(`/api/codebases/${encodeURIComponent(codebaseId)}/git-log`);
+}
+
+export async function revertCodebaseLastCommit(
+  codebaseId: string
+): Promise<{ reverted: { sha: string; subject: string } }> {
+  return fetchJSON<{ reverted: { sha: string; subject: string } }>(
+    `/api/codebases/${encodeURIComponent(codebaseId)}/git-revert`,
+    { method: 'POST' }
+  );
+}
+
+export async function publishCodebase(
+  codebaseId: string
+): Promise<{ branch: string; remote: string; ref: string }> {
+  return fetchJSON<{ branch: string; remote: string; ref: string }>(
+    `/api/codebases/${encodeURIComponent(codebaseId)}/git-publish`,
+    { method: 'POST' }
+  );
+}
+
 // System
 export async function getHealth(): Promise<HealthResponse> {
   return fetchJSON<HealthResponse>('/api/health');
