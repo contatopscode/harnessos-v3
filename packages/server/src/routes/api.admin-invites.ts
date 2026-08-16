@@ -17,7 +17,8 @@
  */
 import { Hono } from 'hono';
 import { randomBytes, createHash } from 'crypto';
-import { getAuth } from '../auth/instance';
+import type { Pool } from 'pg';
+import { getAuth, getAuthPool } from '../auth/instance';
 import { isWebAuthEnabled } from '../auth/config';
 import { createLogger } from '@archon/paths';
 
@@ -77,12 +78,12 @@ function apiError(
 }
 
 /**
- * Pull a typed pg.Pool out of a Better Auth instance, or null if it can't
- * be located (e.g. an older Better Auth version that wraps the pool).
+ * Pull the Better Auth pg.Pool. Returns null if web auth is disabled
+ * (no pool was ever created). Re-exported by ../auth/instance so we
+ * don't have to reach into Better Auth's internal `options.database` shape.
  */
-function authPool(): unknown {
-  const auth = getAuth() as unknown as { options?: { database?: { pool?: unknown } } } | null;
-  return auth?.options?.database?.pool;
+function authPool(): Pool | null {
+  return getAuthPool();
 }
 
 /**

@@ -146,6 +146,16 @@ export async function closeAuth(): Promise<void> {
   }
 }
 
+/** Direct accessor for the Better Auth pg.Pool (or null when web auth is off).
+ *  Sibling route files (./api.admin-invites) need a handle on the same pool
+ *  Better Auth uses, so they query the same database as the auth instance.
+ *  Returns null rather than throwing when auth is disabled — callers can
+ *  decide whether to 503.
+ */
+export function getAuthPool(): Pool | null {
+  return authPool;
+}
+
 /** Test-only: clear the cached instance so env changes take effect. */
 export function resetAuthForTest(): void {
   cached = undefined;
