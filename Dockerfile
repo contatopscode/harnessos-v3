@@ -190,7 +190,14 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Copy the debug wrapper too — it runs the real entrypoint and holds the
+# container alive for 1h on crash so Easypanel's runtime log can flush.
+# Reverts to docker-entrypoint.sh once deploy is green.
+COPY docker-entrypoint-debug.sh /usr/local/bin/
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint-debug.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint-debug.sh
+
 # Default port (matches .env.example PORT=3000)
 EXPOSE 3000
 
-ENTRYPOINT ["docker-entrypoint-debug.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-debug.sh"]
