@@ -11,7 +11,7 @@
  * `use_count` and `last_used_at` columns are updated by `bumpMemoryUsage`
  * after a successful recall, so the UI can rank memories by usefulness.
  */
-import { pool } from './connection';
+import { getDatabaseType, pool } from './connection';
 import type { Memory, MemoryKind, MemoryScope } from '../schemas';
 
 // ---------------------------------------------------------------------------
@@ -122,8 +122,9 @@ export async function deleteMemory(id: string): Promise<boolean> {
 
 /**
  * List memories with optional scope / kind / free-text filters. The free-text
- * filter uses the FTS5 index via a `MATCH` query. Total count comes from a
- * separate aggregate (same pattern as the agents / runs listings).
+ * filter uses the FTS5 index (SQLite) or tsvector @@ to_tsquery (Postgres).
+ * Total count comes from a separate aggregate (same pattern as the agents /
+ * runs listings).
  */
 export async function listMemories(options: ListMemoriesOptions = {}): Promise<ListMemoriesResult> {
   const { scope, kind, search, limit = 50, offset = 0 } = options;
@@ -139,24 +140,38 @@ export async function listMemories(options: ListMemoriesOptions = {}): Promise<L
     where.push(`m.kind = $${params.length}`);
   }
 
-  // Free-text filter: prefer the FTS5 MATCH path when a search term is
-  // present. Falls back to LIKE for partial-word matches that FTS5's
-  // porter tokenizer can't handle. We union the two (FTS first, ranked).
-  let ftsIds: number[] | null = null;
+  // Free-text filter: SQLite uses FTS5 MATCH; Postgres uses tsvector @@
+  // to_tsquery on the auto-maintained content_tsv column. Same contract
+  // (return matching rows in the same order the caller would expect).
+  const isPg = getDatabaseType() === 'postgresql';
   if (search !== undefined && search.trim() !== '') {
-    const ftsResult = await pool.query<{ rowid: number }>(
-      'SELECT rowid FROM remote_agent_memories_fts WHERE remote_agent_memories_fts MATCH $1 LIMIT 100',
-      [search.trim()]
-    );
-    ftsIds = ftsResult.rows.map(r => r.rowid);
-    if (ftsIds.length === 0) {
-      // FTS found nothing — return empty rather than fall back to LIKE
-      // (avoids surprising the user with partial matches they didn't ask for).
+    const tokens = search
+      .trim()
+      .split(/\s+/)
+      .map(t => t.replace(/[:()"']/g, ''))
+      .filter(t => t.length > 0);
+    if (tokens.length === 0) {
       return { total: 0, memories: [] };
     }
-    const placeholders = ftsIds.map((_, i) => `$${params.length + i + 1}`).join(',');
-    where.push(`m.rowid IN (${placeholders})`);
-    params.push(...ftsIds);
+    if (isPg) {
+      const tsQuery = tokens.join(' | ');
+      params.push(tsQuery);
+      where.push(`m.content_tsv @@ to_tsquery('simple', $${params.length})`);
+    } else {
+      const matchQuery = tokens.map(t => `"${t}"`).join(' OR ');
+      params.push(matchQuery);
+      const ftsResult = await pool.query<{ rowid: number }>(
+        'SELECT rowid FROM remote_agent_memories_fts WHERE remote_agent_memories_fts MATCH $1 LIMIT 100',
+        [matchQuery]
+      );
+      const ftsIds = ftsResult.rows.map(r => r.rowid);
+      if (ftsIds.length === 0) {
+        return { total: 0, memories: [] };
+      }
+      const placeholders = ftsIds.map((_, i) => `$${params.length + i + 1}`).join(',');
+      where.push(`m.rowid IN (${placeholders})`);
+      params.push(...ftsIds);
+    }
   }
 
   const whereSql = where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`;
@@ -223,58 +238,92 @@ export async function recallMemories(options: RecallOptions): Promise<Memory[]> 
     where += ` AND m.kind = $${params.length}`;
   }
 
-  // FTS5 search joined back to the base table. We pull the top (limit * 4)
-  // candidates so the scope/filter post-filter has room to breathe, then
-  // trim to `limit`. The rank uses bm25(fts) which returns negative-ish
-  // numbers (more negative = more relevant); we convert to a 0-1 score.
-  //
-  // OR semantics (not FTS5's default AND): natural-language queries
-  // ("qual editor o paulo usa") have lots of stopwords/function words that
-  // AND would filter out the actually-relevant memory. We tokenize on
-  // whitespace, drop empty tokens, and OR the rest — bm25 then ranks the
-  // best-matching memory first. If a token contains an FTS5 reserved
-  // character (AND, OR, NOT, NEAR, parentheses, quotes, colons), we
-  // quote-escape it to avoid the query parser choking.
+  // Two backend paths: SQLite uses FTS5 with bm25 ranking; Postgres uses
+  // tsvector + GIN. Same contract (rows scored 0-1) but the SQL and ranking
+  // differ. Branching on getDatabaseType() avoids loading a driver-specific
+  // module in the wrong runtime and keeps the upsert trigger migration
+  // (which creates the FTS5 virtual table) untouched.
+  const isPg = getDatabaseType() === 'postgresql';
+
+  // Tokenize the query and OR the tokens together (AND would over-filter
+  // natural-language queries that mix stopwords with signal words). For
+  // FTS5 we quote-escape each token to keep the query parser happy. For PG
+  // we feed the same tokens to plainto_tsquery / to_tsquery which already
+  // handles the escaping for us.
   const tokens = query
     .trim()
     .split(/\s+/)
     .filter(t => t.length > 0)
-    .map(t => {
-      // Strip a trailing colon if present (FTS5 reserved for column filters)
-      const cleaned = t.replace(/[:()"']/g, '');
-      return cleaned.length > 0 ? `"${cleaned}"` : null;
-    })
-    .filter((t): t is string => t !== null);
-  const matchQuery = tokens.length > 0 ? tokens.join(' OR ') : '""';
+    .map(t => t.replace(/[:()"']/g, ''))
+    .filter(t => t.length > 0);
 
-  params.push(matchQuery);
-  const matchParam = `$${params.length}`;
-  const sql = `
-    SELECT m.id, m.scope, m.scope_id, m.kind, m.content, m.source,
-           m.confidence, m.created_at, m.last_used_at, m.use_count,
-           bm25(remote_agent_memories_fts) AS bm25_score
-    FROM remote_agent_memories_fts
-    JOIN remote_agent_memories m ON m.rowid = remote_agent_memories_fts.rowid
-    WHERE remote_agent_memories_fts MATCH ${matchParam}
-      AND (${where})
-    ORDER BY bm25_score ASC
-    LIMIT $${params.length + 1}
-  `;
-  params.push(Math.max(limit * 4, 20));
-  const result = await pool.query<Record<string, unknown> & { bm25_score: number }>(sql, params);
+  if (tokens.length === 0) return [];
 
-  // Convert bm25 (negative = better) to a 0-1 score. The min/max approach
-  // gives the top hit a score of 1.0 and a no-signal hit ~0.0, which is
-  // what the UI and orchestrator expect. The driver returns bm25_score as
-  // a number, so we can use it directly without re-wrapping in Number().
-  const scores = result.rows.map(r => r.bm25_score);
-  const minScore = Math.min(...scores);
-  const maxScore = Math.max(...scores);
-  const range = maxScore - minScore || 1;
+  let result: { rows: readonly (Record<string, unknown> & { rank_score: number })[] };
+
+  if (isPg) {
+    // Postgres: content_tsv is a generated tsvector column (kept in sync by
+    // a trigger in 000_combined.sql). We rank with ts_rank which returns
+    // 0-1 floats (higher = better), so no min/max normalization is needed —
+    // we just pass rank_score through as 0-1. The `:tsquery` placeholder
+    // uses `to_tsquery` with OR-joined tokens; to_tsquery understands
+    // 'token1 | token2' syntax.
+    const tsQuery = tokens.map(t => t).join(' | ');
+    params.push(tsQuery);
+    params.push(Math.max(limit * 4, 20));
+    const sql = `
+      SELECT m.id, m.scope, m.scope_id, m.kind, m.content, m.source,
+             m.confidence, m.created_at, m.last_used_at, m.use_count,
+             ts_rank(m.content_tsv, to_tsquery('simple', $${params.length - 1})) AS rank_score
+      FROM remote_agent_memories m
+      WHERE m.content_tsv @@ to_tsquery('simple', $${params.length - 1})
+        AND (${where})
+      ORDER BY rank_score DESC
+      LIMIT $${params.length}
+    `;
+    result = await pool.query<Record<string, unknown> & { rank_score: number }>(sql, params);
+  } else {
+    // SQLite: FTS5 virtual table + bm25 ranking (lower is better).
+    const matchQuery = tokens.map(t => `"${t}"`).join(' OR ');
+    params.push(matchQuery);
+    const matchParam = `$${params.length}`;
+    const sql = `
+      SELECT m.id, m.scope, m.scope_id, m.kind, m.content, m.source,
+             m.confidence, m.created_at, m.last_used_at, m.use_count,
+             bm25(remote_agent_memories_fts) AS bm25_score
+      FROM remote_agent_memories_fts
+      JOIN remote_agent_memories m ON m.rowid = remote_agent_memories_fts.rowid
+      WHERE remote_agent_memories_fts MATCH ${matchParam}
+        AND (${where})
+      ORDER BY bm25_score ASC
+      LIMIT $${params.length + 1}
+    `;
+    params.push(Math.max(limit * 4, 20));
+    const rawResult = await pool.query<Record<string, unknown> & { bm25_score: number }>(
+      sql,
+      params
+    );
+    // Normalize bm25 (negative = better) to a 0-1 score so the rest of the
+    // pipeline (which already handled this format) keeps working unchanged.
+    const scores = rawResult.rows.map(r => r.bm25_score);
+    const minScore = scores.length > 0 ? Math.min(...scores) : 0;
+    const maxScore = scores.length > 0 ? Math.max(...scores) : 0;
+    const range = maxScore - minScore || 1;
+    result = {
+      rows: rawResult.rows.map(r => ({
+        ...r,
+        rank_score: 1 - (r.bm25_score - minScore) / range,
+      })),
+    };
+  }
+
+  // Both branches now expose `rank_score` (0-1, higher = better) on each
+  // row. PG's ts_rank returns native 0-1; SQLite's bm25 was normalized
+  // above. We just sort and trim.
   const ranked = result.rows
     .map(r => ({
       memory: rowToMemory(r),
-      score: 1 - (r.bm25_score - minScore) / range,
+      score: r.rank_score,
     }))
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
