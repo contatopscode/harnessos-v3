@@ -163,6 +163,13 @@ COPY --from=web-build /app/packages/web/dist/ ./packages/web/dist/
 # Copy config, migrations, and bundled defaults
 COPY .archon/ ./.archon/
 COPY migrations/ ./migrations/
+# Bundled skill files — packages/core/src/skills/bundled-skill.ts dynamically
+# imports .claude/skills/{archon,manage-run}/** with { type: 'text' }. The
+# dynamic import is gated by `installArchonSkills` so it never runs in the
+# web build stage, but it still needs the files on disk in the production
+# image in case `archon skill install` (or the Web UI's POST /api/codebases
+# /{id}/skills endpoint) is invoked at runtime.
+COPY .claude/ ./.claude/
 COPY tsconfig*.json ./
 
 # Fix permissions for appuser
