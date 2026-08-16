@@ -1,5 +1,12 @@
 #!/bin/bash
-set -e
+# TEMP DEBUG: trace every command so the runtime log isn't empty if
+# the server crashes before flushing any stdout. Paulo is debugging
+# a 502 / Service Unreachable on the Easypanel deploy and the log
+# panel is showing blank — usually means the container crash-loops
+# so fast that nothing gets flushed. set -x + the debug prints
+# below will surface the actual failure on the next deploy.
+# Remove this block once the deploy is green.
+set -xe
 
 # Ensure required subdirectories exist.
 # Named volumes inherit these from the image layer on first run; bind mounts do not,
@@ -84,7 +91,26 @@ if [ -z "${CLAUDE_BIN_PATH:-}" ]; then
   unset _CLAUDE_BIN_CANDIDATE
 fi
 
+# TEMP DEBUG: confirm the .claude/skills payload actually landed in the
+# image. bundled-skill.ts does `import ... with { type: 'text' }` on these
+# files; if they're missing the server crashes on first import.
+echo "[debug] /app exists? $(test -d /app && echo yes || echo no)"
+echo "[debug] /app/.claude exists? $(test -d /app/.claude && echo yes || echo no)"
+echo "[debug] ls -la /app/.claude/skills/:"
+ls -la /app/.claude/skills/ 2>&1 || echo "MISSING /app/.claude/skills/"
+echo "[debug] ls -la /app/.claude/skills/archon/ 2>&1 | head -20:"
+ls -la /app/.claude/skills/archon/ 2>&1 | head -20 || echo "MISSING /app/.claude/skills/archon/"
+echo "[debug] ls -la /app/packages/core/src/skills/:"
+ls -la /app/packages/core/src/skills/ 2>&1 || echo "MISSING /app/packages/core/src/skills/"
+echo "[debug] id: $(id 2>&1)"
+echo "[debug] uname -m: $(uname -m)"
+echo "[debug] bun --version:"
+$RUNNER bun --version 2>&1 || echo "bun not found"
+echo "[debug] end of pre-start diagnostics"
+
 # Run setup-auth (exits after configuring Codex credentials), then exec the server
 # exec ensures bun is PID 1 and receives SIGTERM for graceful shutdown
+echo "[debug] running setup-auth..."
 $RUNNER bun run setup-auth
+echo "[debug] setup-auth done; running start..."
 exec $RUNNER bun run start
