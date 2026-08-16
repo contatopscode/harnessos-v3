@@ -259,6 +259,7 @@ import {
   introspectOpencodeCredentials,
 } from '@archon/providers';
 import { messageSchema } from './schemas/conversation.schemas';
+import { adminInvites, publicInvite } from './api.admin-invites';
 import {
   workflowRunSchema,
   dashboardWorkflowRunSchema,
@@ -1857,6 +1858,19 @@ export function registerApiRoutes(
   registerOpenApiRoute(authStatusRoute, c => {
     return c.json({ enabled: isWebAuthEnabled(), signup: getSignupMode() });
   });
+
+  // ---- Admin invite management ----
+  // /api/admin/* is registered BEFORE the API gate so admins can reach
+  // the endpoints; the requireWebAdmin() helper inside the Hono subapp
+  // is the real access boundary (session + role='admin' required).
+  app.route('/api/admin', adminInvites);
+
+  // ---- Public invite acceptance ----
+  // /api/auth/invite/* is exempted from the API gate via the
+  // /api/auth/ PUBLIC_API_GATE_PREFIXES entry; isArchonOwnedAuthPath
+  // tells Better Auth to next() past it. The endpoints are public so
+  // a fresh invitee (no session yet) can validate the link.
+  app.route('/api/auth/invite', publicInvite);
 
   // ---- GitHub device-flow connect endpoints ----
   registerOpenApiRoute(githubDeviceStartRoute, async c => {

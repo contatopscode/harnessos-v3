@@ -18,7 +18,8 @@ import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { Pool } from 'pg';
 import { createLogger } from '@archon/paths';
-import { isWebAuthEnabled, parseAllowedEmails, isEmailAllowed, getSignupMode } from './config';
+import { isWebAuthEnabled, getSignupMode } from './config';
+import { isEmailOnAllowlist, makePgAllowlistQuery } from './allowlist';
 
 const log = createLogger('web-auth');
 
@@ -70,11 +71,9 @@ function buildAuth(env: NodeJS.ProcessEnv): AuthInstance {
     .map(s => s.trim())
     .filter(Boolean);
 
-  // The allowlist is static for this install — parse it once at construction
-  // rather than on every signup.
-  const allowedEmails = parseAllowedEmails(env);
   // Safe default: with no allowlist and no explicit open-signup flag, signup is
-  // OFF (login only) rather than silently open on a reachable URL.
+  // OFF (login only) rather than silently open on a reachable URL. The env
+  // allowlist is consulted dynamically by isEmailOnAllowlist (see ./allowlist).
   const signupDisabled = getSignupMode(env) === 'disabled';
 
   // Dedicated small pool; Better Auth requires a real pg.Pool. Retained at module
@@ -108,12 +107,22 @@ function buildAuth(env: NodeJS.ProcessEnv): AuthInstance {
             if (signupDisabled) {
               throw new APIError('FORBIDDEN', { message: 'Signup is disabled.' });
             }
-            // Invite gate (`allowlist` mode): reject signups whose email is not on
-            // the allowlist. Throwing APIError surfaces a clean 403 instead of a
-            // generic 500. An empty allowlist makes isEmailAllowed() return true,
-            // so this hook is a no-op in `open` mode — `disableSignUp` and the
-            // posture above are what actually govern whether signup is permitted.
-            if (!isEmailAllowed(user.email, allowedEmails)) {
+            // Invite gate (env allowlist OR durable invite in
+            // remote_agent_auth_invite). isEmailOnAllowlist combines the two:
+            // static env seed (admins pre-provisioned via Easypanel) and dynamic
+            // invites issued via /api/admin/invites. Better Auth's pool is reused
+            // for the lookup so we don't add another connection.
+            if (!authPool) {
+              throw new APIError('INTERNAL_SERVER_ERROR', {
+                message: 'Auth pool not initialized',
+              });
+            }
+            const onAllowlist = await isEmailOnAllowlist({
+              email: user.email,
+              env,
+              queryDb: makePgAllowlistQuery(authPool),
+            });
+            if (!onAllowlist) {
               throw new APIError('FORBIDDEN', {
                 message: 'This email is not on the invite allowlist.',
               });

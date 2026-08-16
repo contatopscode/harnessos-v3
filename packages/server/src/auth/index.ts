@@ -15,3 +15,10 @@ export {
   MIN_BETTER_AUTH_SECRET_LENGTH,
 } from './config';
 export { getAuth, closeAuth, resetAuthForTest, type AuthInstance } from './instance';
+export {
+  isEmailOnAllowlist,
+  makePgAllowlistQuery,
+  ALLOWLIST_INVITE_SQL,
+  type AllowlistDbQuery,
+  type AllowlistQueryResult,
+} from './allowlist';

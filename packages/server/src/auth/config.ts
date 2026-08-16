@@ -120,6 +120,10 @@ export function isArchonOwnedAuthPath(path: string): boolean {
     path === '/api/auth/providers' ||
     path.startsWith('/api/auth/providers/') ||
     path === '/api/auth/me/ai-prefs' ||
-    path.startsWith('/api/auth/me/ai-prefs/')
+    path.startsWith('/api/auth/me/ai-prefs/') ||
+    // Invite acceptance flow (public — no Better Auth session required).
+    // See packages/server/src/routes/api.admin-invites.ts (publicInvite Hono).
+    path === '/api/auth/invite/info' ||
+    path === '/api/auth/invite/accept'
   );
 }

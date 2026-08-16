@@ -562,6 +562,41 @@ CREATE TABLE IF NOT EXISTS remote_agent_auth_verification (
 );
 
 -- ============================================================================
+-- Auth invite allowlist (migration 026)
+-- ============================================================================
+--
+-- Durable side of the signup allowlist. Pairs with
+-- ARCHON_AUTH_ALLOWED_EMAILS (which stays as a static env baseline
+-- for pre-seeding admins). A signup attempt passes the gate when
+--   (a) the email is in ARCHON_AUTH_ALLOWED_EMAILS, OR
+--   (b) the email has a non-revoked, non-expired, non-accepted
+--       invite row (Better Auth's user.create.before hook stamps
+--       accepted_at on the matching invite when the signup succeeds).
+-- See packages/server/src/auth/allowlist.ts and api.admin-invites.ts.
+
+CREATE TABLE IF NOT EXISTS remote_agent_auth_invite (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) NOT NULL,
+  role VARCHAR(16) NOT NULL DEFAULT 'member'
+    CHECK (role IN ('admin', 'member')),
+  token VARCHAR(128) NOT NULL UNIQUE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  accepted_at TIMESTAMPTZ,
+  accepted_by_user_id TEXT
+    REFERENCES remote_agent_auth_user(id) ON DELETE SET NULL,
+  created_by_user_id TEXT
+    REFERENCES remote_agent_auth_user(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_invite_email
+  ON remote_agent_auth_invite(email);
+CREATE INDEX IF NOT EXISTS idx_auth_invite_token
+  ON remote_agent_auth_invite(token)
+  WHERE accepted_at IS NULL;
+
+-- ============================================================================
 -- Agent system: installed agents + routing audit (migration 024)
 -- ============================================================================
 --

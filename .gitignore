@@ -120,3 +120,6 @@ packages/server/.env
 skills-lock.json
 test-results/
 .archon/ralph/
+
+# Local deploy credentials — generated per-machine, do not commit
+deploy.env
