@@ -193,4 +193,4 @@ RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
 # Default port (matches .env.example PORT=3000)
 EXPOSE 3000
 
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["docker-entrypoint-debug.sh"]
