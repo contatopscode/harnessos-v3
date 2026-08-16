@@ -889,6 +889,40 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
     return c.json({ status: 'ok', active, queuedTotal, maxConcurrent });
   });
 
+  // DEBUG: Try the pi provider directly to surface real error
+  app.get('/health/pi-debug', async c => {
+    try {
+      const { getAgentProvider } = await import('@archon/providers');
+      const pi = getAgentProvider('pi');
+      if (!pi) return c.json({ ok: false, error: 'pi provider not registered' }, 500);
+      const cwd = process.cwd();
+      const iter = pi.sendQuery('diga apenas OK', cwd, undefined, { model: 'minimax/MiniMax-M3' });
+      const start = Date.now();
+      const chunks: unknown[] = [];
+      let result = '';
+      for await (const chunk of iter) {
+        const c = chunk as unknown as Record<string, unknown>;
+        chunks.push({
+          type: c.type,
+          ...(c.subtype ? { subtype: c.subtype } : {}),
+          ...(c.errorSubtype ? { errorSubtype: c.errorSubtype } : {}),
+          ...(c.errors ? { errors: c.errors } : {}),
+          ...(c.content ? { contentPreview: JSON.stringify(c.content).slice(0, 200) } : {}),
+        });
+        if (c.type === 'assistant' && c.content) {
+          const content = c.content;
+          result += typeof content === 'string' ? content : JSON.stringify(content);
+        }
+        if (c.type === 'result' || c.errorSubtype) break;
+        if (Date.now() - start > 30000) break;
+      }
+      return c.json({ ok: true, result: result.slice(0, 500), chunks });
+    } catch (err) {
+      const e = err as Error;
+      return c.json({ ok: false, error: e.message, stack: (e.stack ?? '').slice(0, 2000) }, 500);
+    }
+  });
+
   // Serve web UI static files in production
   // Uses import.meta.dir for absolute path (CWD varies with bun --filter)
   if (process.env.NODE_ENV === 'production' || !process.env.WEB_UI_DEV) {
