@@ -34,8 +34,15 @@ Dockerfile.user
 # Documentation site (not needed in production)
 docs/
 
-# Claude Code skills, rules, and commands (not needed in production)
-.claude/
+# Claude Code skills, rules, and commands — the bundled archon + manage-run
+# skills are embedded into packages/core/src/skills/bundled-skill.ts via
+# dynamic `import ... with { type: 'text' }`, and the server resolves them
+# at runtime when `archon skill install` or the Web UI's
+# POST /api/codebases/{id}/skills endpoint fires. So we DO need them in the
+# production image, despite the legacy "not needed in production" comment
+# above (that predated Path B's Skills install feature).
+!.claude/skills/archon/
+!.claude/skills/manage-run/
 
 # Analysis and POC directories
 .codebase-analysis/
