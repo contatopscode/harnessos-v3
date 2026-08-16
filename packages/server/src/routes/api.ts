@@ -261,6 +261,14 @@ import {
 import { messageSchema } from './schemas/conversation.schemas';
 import { adminInvites, publicInvite } from './api.admin-invites';
 import {
+  getCodebaseGitLog,
+  postCodebaseGitRevert,
+  postCodebaseGitPublish,
+  getLogRoute,
+  revertRoute,
+  publishRoute,
+} from './api.codebase-git';
+import {
   workflowRunSchema,
   dashboardWorkflowRunSchema,
   workflowRunStatusSchema,
@@ -3295,6 +3303,12 @@ export function registerApiRoutes(
       return apiError(c, 500, 'Failed to delete env var');
     }
   });
+
+  // Git Turbo endpoints — always-on versioned working state with one-click
+  // revert and publish. See api.codebase-git.ts for the route + handler.
+  registerOpenApiRoute(getLogRoute, getCodebaseGitLog);
+  registerOpenApiRoute(revertRoute, postCodebaseGitRevert);
+  registerOpenApiRoute(publishRoute, postCodebaseGitPublish);
 
   // POST /api/codebases/:id/skills - Install the bundled Archon skills
   // (`archon` + `manage-run`) into the project directory. Powers the

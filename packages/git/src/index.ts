@@ -54,3 +54,7 @@ export {
   syncRepository,
   addSafeDirectory,
 } from './repo';
+
+// Git Turbo helpers (auto-commit + log + revert + publish)
+export { commitIfDirty, isDirty, getRecentLog, revertLastCommit, publishBranch } from './git-turbo';
+export type { CommitSummary, GitLogResult, GitTurboOptions } from './git-turbo';
