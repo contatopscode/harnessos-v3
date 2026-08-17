@@ -269,6 +269,20 @@ import {
   publishRoute,
 } from './api.codebase-git';
 import {
+  postCreateSandbox,
+  getListSandboxes,
+  getSandbox,
+  getSandboxDiff,
+  postMergeSandbox,
+  postDiscardSandbox,
+  createSandboxRoute,
+  listSandboxesRoute,
+  getSandboxRoute,
+  diffSandboxRoute,
+  mergeSandboxRoute,
+  discardSandboxRoute,
+} from './api.sandboxes';
+import {
   workflowRunSchema,
   dashboardWorkflowRunSchema,
   workflowRunStatusSchema,
@@ -3309,6 +3323,15 @@ export function registerApiRoutes(
   registerOpenApiRoute(getLogRoute, getCodebaseGitLog);
   registerOpenApiRoute(revertRoute, postCodebaseGitRevert);
   registerOpenApiRoute(publishRoute, postCodebaseGitPublish);
+
+  // Sandbox Mode endpoints — create/list/diff/merge/discard a branch+worktree
+  // for safe experimentation. See api.sandboxes.ts for the route + handler.
+  registerOpenApiRoute(createSandboxRoute, postCreateSandbox);
+  registerOpenApiRoute(listSandboxesRoute, getListSandboxes);
+  registerOpenApiRoute(getSandboxRoute, getSandbox);
+  registerOpenApiRoute(diffSandboxRoute, getSandboxDiff);
+  registerOpenApiRoute(mergeSandboxRoute, postMergeSandbox);
+  registerOpenApiRoute(discardSandboxRoute, postDiscardSandbox);
 
   // POST /api/codebases/:id/skills - Install the bundled Archon skills
   // (`archon` + `manage-run`) into the project directory. Powers the

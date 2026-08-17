@@ -23,7 +23,7 @@ export type { ExecutionContext, WriteBackFinalizeResult, WriteBackApplySummary }
 
 export type IsolationProviderType = 'worktree' | 'container' | 'vm' | 'remote';
 
-export type IsolationWorkflowType = 'issue' | 'pr' | 'review' | 'thread' | 'task';
+export type IsolationWorkflowType = 'issue' | 'pr' | 'review' | 'thread' | 'task' | 'sandbox';
 
 export type EnvironmentStatus = 'active' | 'destroyed';
 

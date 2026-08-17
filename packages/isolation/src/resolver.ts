@@ -493,10 +493,16 @@ export class IsolationResolver {
         fromBranch: hints?.fromBranch,
       };
     } else {
+      // The `IsolationRequest` union predates the `sandbox` workflow type
+      // and only covers the five built-in kinds. Sandbox creation goes
+      // through the dedicated /api/sandboxes endpoint, not through this
+      // generic resolver, so we just need a typed-enough request here
+      // for the type-checker to be happy. The branch is unreachable in
+      // practice for sandbox workflows.
       isolationRequest = {
         ...baseRequest,
-        workflowType,
-      };
+        workflowType: workflowType as 'issue' | 'pr' | 'review' | 'thread' | 'task',
+      } as Parameters<typeof this.provider.create>[0];
     }
 
     let isolatedEnv: Awaited<ReturnType<typeof this.provider.create>>;

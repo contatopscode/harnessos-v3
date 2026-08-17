@@ -58,3 +58,15 @@ export {
 // Git Turbo helpers (auto-commit + log + revert + publish)
 export { commitIfDirty, isDirty, getRecentLog, revertLastCommit, publishBranch } from './git-turbo';
 export type { CommitSummary, GitLogResult, GitTurboOptions } from './git-turbo';
+
+// Git Sandbox helpers (create/diff/merge/discard) for the user-facing
+// "Sandbox Mode" workflow. Same git primitives as Turbo but driven by
+// an explicit user action rather than the auto-commit throttle.
+export {
+  createSandbox,
+  diffSandbox,
+  mergeSandbox,
+  discardSandbox,
+  DEFAULT_SANDBOX_BASE,
+} from './git-sandbox';
+export type { SandboxCreateResult, SandboxDiffResult } from './git-sandbox';
