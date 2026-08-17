@@ -42,6 +42,7 @@ interface SandboxRow {
 }
 import * as codebaseDb from '@archon/core/db/codebases';
 import * as isoDb from '@archon/core/db/isolation-environments';
+import * as sandboxDb from '@archon/core/db/sandbox';
 import { apiError } from './api-error';
 import { codebaseIdParamsSchema } from './schemas/codebase.schemas';
 
@@ -360,6 +361,13 @@ export async function postMergeSandbox(c: Context): Promise<Response> {
       env.working_path,
       branch
     );
+    // Stamp outcome BEFORE marking destroyed — keeps the row in 'active' for
+    // the metadata write so a concurrent orchestrator turn doesn't see a
+    // half-finalized state. clearConversationsOnWorktree resets cwd on any
+    // conversation pointing at the (now removed) worktree path so the next
+    // chat turn falls back to the canonical repo.
+    await sandboxDb.finalizeSandbox(env.id, 'merged');
+    await sandboxDb.clearConversationsOnWorktree(env.working_path);
     await isoDb.updateStatus(env.id, 'destroyed');
     return c.json(mergeResult);
   } catch (err) {
@@ -387,6 +395,11 @@ export async function postDiscardSandbox(c: Context): Promise<Response> {
       env.working_path,
       branch
     );
+    // Same lifecycle order as /merge: stamp outcome, reset any conversation
+    // pointing at this worktree, then mark destroyed. The orchestrator will
+    // fall back to the canonical repo on its next turn.
+    await sandboxDb.finalizeSandbox(env.id, 'discarded');
+    await sandboxDb.clearConversationsOnWorktree(env.working_path);
     await isoDb.updateStatus(env.id, 'destroyed');
     return c.json(discardResult);
   } catch (err) {

@@ -44,6 +44,43 @@ export interface WorkflowResultContext {
   summary: string;
 }
 
+/** Minimal sandbox context for the system prompt section. */
+export interface SandboxContext {
+  /** Slug used to build the branch name (e.g., 'sandbox-test' → branch 'sandbox/sandbox-test'). */
+  slug: string;
+  /** Absolute path to the worktree the agent is currently working inside. */
+  worktreePath: string;
+  /** Branch the sandbox is based on (typically 'main'). */
+  baseBranch: string;
+  /** Current message count in the sandbox (from metadata.sandboxMessageCount). */
+  messageCount: number;
+}
+
+/**
+ * Build the "Sandbox Mode" section appended to the system prompt when the
+ * chat is currently running inside a sandbox worktree. Tells the agent
+ * (a) it is sandboxed, (b) the worktree path and base branch, and
+ * (c) that its edits are isolated — the user must explicitly merge or
+ * discard the sandbox for changes to land in main.
+ *
+ * Without this section, an agent would happily commit to the worktree
+ * without ever telling the user the changes are isolated, leaving the
+ * user wondering why main never updated. The section is short on
+ * purpose — long enough to anchor the agent, short enough not to crowd
+ * out the rest of the prompt.
+ */
+export function buildSandboxSection(ctx: SandboxContext): string {
+  return `## Sandbox Mode
+
+You are currently working inside a **sandbox** — an isolated git worktree, not the canonical repository.
+
+- **Branch:** \`sandbox/${ctx.slug}\` (based on \`${ctx.baseBranch}\`)
+- **Working directory:** \`${ctx.worktreePath}\`
+- **Messages so far:** ${ctx.messageCount}
+
+All edits you make here stay in the sandbox until the user explicitly merges or discards it. Do NOT assume your changes are on \`${ctx.baseBranch}\` — they are not. If the user asks "did you commit?", the answer is "I committed to \`sandbox/${ctx.slug}\`; you need to merge it to land on \`${ctx.baseBranch}\`." When you finish a meaningful chunk of work, mention this to the user so they can decide.`;
+}
+
 /**
  * Format recent workflow results for injection into the orchestrator prompt.
  * Returns empty string when there are no results; buildFullPrompt checks for

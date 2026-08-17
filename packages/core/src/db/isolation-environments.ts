@@ -325,3 +325,103 @@ export function createIsolationStore(): IIsolationStore {
     countActiveByCodebase,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Sandbox-specific helpers (workflow_type = 'sandbox')
+//
+// Sandboxes are stored in the same `remote_agent_isolation_environments` table
+// as other isolation kinds; the helpers below make the sandbox-specific
+// lookups + lifecycle calls one-liners. None of these touch the table schema
+// — they only read/mutate the `metadata` JSONB column.
+// ---------------------------------------------------------------------------
+
+/**
+ * Find the active sandbox for a codebase whose worktree path matches `cwd`.
+ * Returns `null` when the cwd is the canonical repo (no sandbox active) or
+ * when no active sandbox owns the worktree.
+ *
+ * The orchestrator uses this to auto-detect "is the chat currently inside a
+ * sandbox?" purely from the cwd — no extra field on the conversation row
+ * required. The sandbox selector (commit 4) makes the user explicit; this
+ * is the implicit / best-effort path.
+ */
+export async function findActiveSandboxByCwd(
+  codebaseId: string,
+  cwd: string
+): Promise<IsolationEnvironmentRow | null> {
+  if (!cwd) return null;
+  const result = await pool.query<IsolationEnvironmentRow>(
+    `SELECT * FROM remote_agent_isolation_environments
+     WHERE codebase_id = $1
+       AND workflow_type = 'sandbox'
+       AND status = 'active'
+       AND working_path = $2
+     LIMIT 1`,
+    [codebaseId, cwd]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Record a single chat turn inside a sandbox. Increments
+ * `metadata.sandboxMessageCount` and stamps `metadata.sandboxLastActivityAt`
+ * with the current time so the UI can show "last activity 5 min ago" and
+ * `isolation cleanup` can age sandboxes out.
+ *
+ * Fire-and-forget by design — the chat turn must not fail because the
+ * metadata write hiccupped. Caller is expected to log (not rethrow) on
+ * failure.
+ */
+export async function recordSandboxTurn(
+  envId: string,
+  timestamp: Date = new Date()
+): Promise<void> {
+  const current = await getById(envId);
+  if (!current) return;
+  const metadata = { ...current.metadata };
+  const prevCount =
+    typeof metadata.sandboxMessageCount === 'number' ? metadata.sandboxMessageCount : 0;
+  metadata.sandboxMessageCount = prevCount + 1;
+  metadata.sandboxLastActivityAt = timestamp.toISOString();
+  await updateMetadata(envId, metadata);
+}
+
+/**
+ * Stamp the final sandbox metrics when the user merges or discards. Saves
+ * `sandboxEndedAt` + `sandboxOutcome` ('merged' | 'discarded') into metadata
+ * so the audit trail captures what happened to the experiment even after
+ * the isolation row transitions to `destroyed`.
+ *
+ * Caller is expected to invoke `updateStatus(envId, 'destroyed')` AFTER this
+ * call returns — keeping the row in `active` for the duration of the
+ * metadata write avoids a race with the orchestrator still writing per-turn
+ * metrics.
+ */
+export async function finalizeSandbox(
+  envId: string,
+  outcome: 'merged' | 'discarded',
+  timestamp: Date = new Date()
+): Promise<void> {
+  const current = await getById(envId);
+  if (!current) return;
+  await updateMetadata(envId, {
+    ...current.metadata,
+    sandboxEndedAt: timestamp.toISOString(),
+    sandboxOutcome: outcome,
+  });
+}
+
+/**
+ * Reset `cwd` on any conversation that points at a given worktree path back
+ * to NULL. Called right after a sandbox is merged or discarded so the next
+ * chat turn falls back to the canonical repo (main), not the now-deleted
+ * worktree path. Without this, the conversation would point at a dead path
+ * and the next agent turn would fail with ENOENT on the workdir check.
+ */
+export async function clearConversationsOnWorktree(worktreePath: string): Promise<number> {
+  const result = await pool.query(
+    'UPDATE remote_agent_conversations SET cwd = NULL WHERE cwd = $1',
+    [worktreePath]
+  );
+  return result.rowCount ?? 0;
+}

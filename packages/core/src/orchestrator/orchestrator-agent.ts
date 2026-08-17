@@ -67,10 +67,11 @@ import { loadConfig } from '../config/config-loader';
 import type { MergedConfig } from '../config/config-types';
 import { generateAndSetTitle } from '../services/title-generator';
 import { validateAndResolveIsolation, dispatchBackgroundWorkflow } from './orchestrator';
-import { IsolationBlockedError } from '@archon/isolation';
+import { IsolationBlockedError, type IsolationEnvironmentRow } from '@archon/isolation';
 import {
   buildOrchestratorSystemAppend,
   buildRunManagementSection,
+  buildSandboxSection,
   formatWorkflowContextSection,
 } from './prompt-builder';
 import type { WorkflowResultContext } from './prompt-builder';
@@ -78,6 +79,7 @@ import { reportUnpushedWorkInSource } from './post-message-reminder';
 import * as messageDb from '../db/messages';
 import * as workflowDb from '../db/workflows';
 import { getCodebaseEnvVars } from '../db/env-vars';
+import * as sandboxDb from '../db/sandbox';
 import { approveWorkflow } from '../operations/workflow-operations';
 import { isApprovalContext, isGateResolved } from '@archon/workflows/schemas/workflow-run';
 import type { ApprovalContext } from '@archon/workflows/schemas/workflow-run';
@@ -1389,6 +1391,22 @@ export async function handleMessage(
       cwd = await ensureArchonWorkspacesPath();
     }
 
+    // Auto-detect Sandbox Mode: if the cwd is a sandbox worktree path, surface
+    // the active sandbox row so we can (a) inject a "Sandbox Mode" section
+    // into the system prompt and (b) record per-turn metrics. Best-effort:
+    // a DB hiccup here must not block the chat — log and fall through.
+    let activeSandbox: Awaited<ReturnType<typeof sandboxDb.findActiveSandboxByCwd>> = null;
+    if (scopedCodebase !== undefined && conversation.cwd !== null) {
+      try {
+        activeSandbox = await sandboxDb.findActiveSandboxByCwd(scopedCodebase.id, conversation.cwd);
+      } catch (sandboxErr) {
+        getLog().warn(
+          { err: toError(sandboxErr), conversationId: conversation.id },
+          'orchestrator.sandbox_lookup_failed'
+        );
+      }
+    }
+
     // Resolve the active agent for this message (path A — Agents). Loads all
     // agents, runs the 5-stage router, and strips any `agent:slug` prefix
     // from the user-visible message. Failures degrade gracefully: the chat
@@ -1582,6 +1600,24 @@ export async function handleMessage(
     if (scopedCaps !== null && !scopedCaps.nativeTools) {
       systemAppend += `\n\n${buildRunManagementSection()}`;
     }
+    // Inject Sandbox Mode section if the chat is currently running inside a
+    // sandbox worktree. Placed last so the agent reads it as the freshest
+    // instruction; without this, the agent would commit to the worktree
+    // without ever telling the user the changes are isolated.
+    if (activeSandbox !== null) {
+      const messageCount =
+        typeof activeSandbox.metadata.sandboxMessageCount === 'number'
+          ? activeSandbox.metadata.sandboxMessageCount
+          : 0;
+      systemAppend +=
+        '\n\n' +
+        buildSandboxSection({
+          slug: activeSandbox.workflow_id,
+          worktreePath: activeSandbox.working_path,
+          baseBranch: 'main',
+          messageCount,
+        });
+    }
     const systemPrompt =
       providerKey === 'claude'
         ? { type: 'preset' as const, preset: 'claude_code' as const, append: systemAppend }
@@ -1694,7 +1730,8 @@ export async function handleMessage(
         conversation,
         issueContext,
         requestOptions,
-        userId
+        userId,
+        activeSandbox
       );
     } else {
       await handleBatchMode(
@@ -1711,7 +1748,8 @@ export async function handleMessage(
         conversation,
         issueContext,
         requestOptions,
-        userId
+        userId,
+        activeSandbox
       );
     }
 
@@ -1814,7 +1852,8 @@ async function handleStreamMode(
   conversation: Conversation,
   issueContext?: string,
   requestOptions?: SendQueryOptions,
-  userId?: string
+  userId?: string,
+  activeSandbox: IsolationEnvironmentRow | null = null
 ): Promise<void> {
   const turnStartedAt = Date.now();
   const allMessages: string[] = [];
@@ -2018,6 +2057,18 @@ async function handleStreamMode(
     tokensOut: lastResult?.tokens?.output,
     outcome: 'completed',
   });
+
+  // Record a sandbox turn — only when the chat actually produced output
+  // (we're after the allMessages.length === 0 early-return above). Fire-and-
+  // forget: a metadata write failure must not abort the response delivery.
+  if (activeSandbox !== null) {
+    void sandboxDb.recordSandboxTurn(activeSandbox.id).catch((sandboxErr: unknown) => {
+      getLog().warn(
+        { err: toError(sandboxErr), sandboxId: activeSandbox?.id },
+        'orchestrator.sandbox_turn_record_failed'
+      );
+    });
+  }
 }
 
 // ─── Batch Mode ─────────────────────────────────────────────────────────────
@@ -2040,7 +2091,8 @@ async function handleBatchMode(
   conversation: Conversation,
   issueContext?: string,
   requestOptions?: SendQueryOptions,
-  userId?: string
+  userId?: string,
+  activeSandbox: IsolationEnvironmentRow | null = null
 ): Promise<void> {
   const turnStartedAt = Date.now();
   const allChunks: { type: string; content: string }[] = [];
@@ -2275,6 +2327,20 @@ async function handleBatchMode(
     tokensOut: lastResult?.tokens?.output,
     outcome: 'completed',
   });
+
+  // Record a sandbox turn — mirrors handleStreamMode. Batch mode is rare
+  // for the web chat (handleStreamMode is the web path) but the Slack /
+  // GitHub / Discord / CLI batch adapters run the chat this way, and a
+  // sandboxed conversation started from any of them still needs the
+  // per-turn metric for the UI to show "last activity N min ago".
+  if (activeSandbox !== null) {
+    void sandboxDb.recordSandboxTurn(activeSandbox.id).catch((sandboxErr: unknown) => {
+      getLog().warn(
+        { err: toError(sandboxErr), sandboxId: activeSandbox?.id },
+        'orchestrator.sandbox_turn_record_failed'
+      );
+    });
+  }
 }
 
 /**
