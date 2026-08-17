@@ -5,6 +5,7 @@ import { ProjectRow } from './ProjectRow';
 import { EnvVarsDialog } from './EnvVarsDialog';
 import { InstallSkillsDialog } from './InstallSkillsDialog';
 import { GitTurboStrip } from './GitTurboStrip';
+import { SandboxStrip } from './SandboxStrip';
 import { useEntity, invalidate } from '../store/cache';
 import { K } from '../store/keys';
 import * as skill from '../skills';
@@ -308,10 +309,15 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
         </button>
       </div>
 
-      {/* Git Turbo strip — only when a project is scoped (not on All view). */}
+      {/* Git Turbo strip + Sandbox Mode panel — only when a project is
+          scoped (not on All view). Both are project-scoped primitives, so
+          the conditional is shared. Sandbox goes BELOW Git Turbo because
+          the typical user flow is: code change (Git Turbo) → experiment
+          in sandbox (Sandbox) — the vertical order mirrors that priority. */}
       {!allSelected && (
-        <div className="px-0 pb-2">
+        <div className="flex flex-col gap-2 px-0 pb-2">
           <GitTurboStrip codebaseId={scope} />
+          <SandboxStrip codebaseId={scope} />
         </div>
       )}
 

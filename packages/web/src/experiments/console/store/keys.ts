@@ -33,4 +33,6 @@ export const K = {
   userAiPrefs: 'user-ai-prefs' as const,
   piModels: 'pi-models' as const,
   gitLog: (projectId: string): string => `git-log:${projectId}`,
+  sandboxes: (projectId: string): string => `sandboxes:${projectId}`,
+  sandboxDiff: (sandboxId: string): string => `sandbox-diff:${sandboxId}`,
 } as const;
