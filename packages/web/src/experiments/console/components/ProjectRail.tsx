@@ -4,6 +4,7 @@ import { Settings, Workflow, ArrowLeft, PenTool, Brain, type LucideIcon } from '
 import { ProjectRow } from './ProjectRow';
 import { EnvVarsDialog } from './EnvVarsDialog';
 import { InstallSkillsDialog } from './InstallSkillsDialog';
+import { GitTurboStrip } from './GitTurboStrip';
 import { useEntity, invalidate } from '../store/cache';
 import { K } from '../store/keys';
 import * as skill from '../skills';
@@ -306,6 +307,13 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
           <span>Adicionar projeto</span>
         </button>
       </div>
+
+      {/* Git Turbo strip — only when a project is scoped (not on All view). */}
+      {!allSelected && (
+        <div className="px-0 pb-2">
+          <GitTurboStrip codebaseId={scope} />
+        </div>
+      )}
 
       {/* Nav menu — settings + the classic-UI escape hatches, under Add project
           and separated from it by the border-t divider. */}

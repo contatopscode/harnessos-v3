@@ -32,4 +32,5 @@ export const K = {
   providerConnections: 'provider-connections' as const,
   userAiPrefs: 'user-ai-prefs' as const,
   piModels: 'pi-models' as const,
+  gitLog: (projectId: string): string => `git-log:${projectId}`,
 } as const;

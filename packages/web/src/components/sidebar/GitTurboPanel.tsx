@@ -23,14 +23,12 @@ function relativeTime(seconds: number): string {
 }
 
 /**
- * Sidebar card for the "Git Turbo" workflow. Shows the most recent commit
- * (subject + relative time + branch) and gives one-click access to revert
- * the last commit and publish the current branch to origin.
+ * Sidebar card for the "Git Turbo" workflow (legacy UI). Shows the most
+ * recent commit (subject + relative time + branch) and gives one-click
+ * access to revert the last commit and publish the current branch to
+ * origin.
  *
- * The panel is intentionally read-mostly: it polls every 10s (matching the
- * conversation/run panels) so the user sees agent commits land in real
- * time without having to refresh. Revert and publish are explicit,
- * confirmable actions — the agent never triggers them itself.
+ * The Console (new UI) renders the compact variant in ProjectRail instead.
  */
 export function GitTurboPanel({ codebaseId }: GitTurboPanelProps): React.ReactElement {
   const queryClient = useQueryClient();
