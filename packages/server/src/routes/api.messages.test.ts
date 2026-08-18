@@ -271,7 +271,7 @@ describe('POST /api/conversations/:id/message', () => {
     );
   });
 
-  test('still dispatches when conversation lookup fails (no message persistence)', async () => {
+  test('rejects with 404 when conversation is not found (no ghost dispatch)', async () => {
     mockFindConversationByPlatformId.mockImplementationOnce(async () => null);
     mockHandleMessage.mockImplementationOnce(async () => {});
 
@@ -281,11 +281,16 @@ describe('POST /api/conversations/:id/message', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: 'Hello' }),
     });
-    // Should still return accepted — message is sent even without persistence
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { accepted: boolean };
-    expect(body.accepted).toBe(true);
-    // addMessage should NOT be called when conversation is not found
+    // New behavior (commit 3ba6c109): reject unknown conversations to prevent
+    // ghost dispatches that burn tokens on a thread with no parent. The handler
+    // returns 404 before any message persistence or handleMessage dispatch.
+    expect(response.status).toBe(404);
+    const body = (await response.json()) as { error: string };
+    expect(body.error).toContain('not found');
+    // Critical: handleMessage must NOT be invoked for an unknown conversation
+    // (that was the whole point of the new guard).
+    expect(mockHandleMessage).not.toHaveBeenCalled();
+    // No message should be persisted for an unknown conversation.
     expect(mockAddMessage).not.toHaveBeenCalled();
   });
 

@@ -33,10 +33,7 @@ export async function skillInstallCommand(targetPath: string): Promise<number> {
   }
 
   try {
-    const installTargets = [
-      `${absoluteTarget}/.claude/skills`,
-      `${absoluteTarget}/.agents/skills`,
-    ];
+    const installTargets = [`${absoluteTarget}/.claude/skills`, `${absoluteTarget}/.agents/skills`];
     console.log(
       `Installing Archon skills (archon + manage-run) into ${installTargets.join(' and ')}`
     );
@@ -51,4 +48,15 @@ export async function skillInstallCommand(targetPath: string): Promise<number> {
     console.error(`Error: Failed to install skill: ${err.message}`);
     return 1;
   }
+}
+
+/**
+ * Copy the bundled Archon skills into <targetPath> (file-system only, no console output).
+ *
+ * Thin wrapper around `@archon/core/skills/install.installArchonSkills` for the CLI's
+ * `setup` test suite and any other programmatic caller that wants the install side-effect
+ * without the `skillInstallCommand` CLI decorations. Returns when the files are written.
+ */
+export async function copyArchonSkill(targetPath: string): Promise<void> {
+  await installArchonSkills(resolve(targetPath));
 }

@@ -7,9 +7,13 @@ import type { IsolationEnvironmentRow } from '@archon/isolation';
 // ─── Mock setup (BEFORE importing module under test) ─────────────────────────
 
 const mockLogger = createMockLogger();
+const mockCaptureChatTurn = mock(() => undefined);
+const mockMakeLogger = mock(() => mockLogger);
 mock.module('@archon/paths', () => ({
   captureApprovalResolved: () => undefined,
+  captureChatTurn: mockCaptureChatTurn,
   createLogger: mock(() => mockLogger),
+  makeLogger: mockMakeLogger,
   getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
   ensureArchonWorkspacesPath: mock(() => Promise.resolve('/home/test/.archon/workspaces')),
   getArchonHome: mock(() => '/home/test/.archon'),

@@ -81,12 +81,11 @@ export const providerKeyParamsSchema = z.object({ provider: z.string() });
 /** PUT /api/auth/providers/:provider request body. */
 export const providerKeySetBodySchema = z
   .object({
-    // `.refine` rejects whitespace-only keys at the validation layer (400)
-    // — defense in depth; the connect-service also trims + rejects blank.
-    apiKey: z
-      .string()
-      .min(1)
-      .refine(v => v.trim().length > 0, { message: 'apiKey must not be blank' }),
+    // NOTE: `.refine` on the `apiKey` field was removed because
+    // `@hono/zod-openapi` cannot represent a ZodEffects wrapper on a field
+    // schema in OpenAPI 3.0. The "no whitespace-only" check is now enforced
+    // in the route handler before delegating to the connect-service.
+    apiKey: z.string().min(1),
     label: z.string().optional(),
   })
   .openapi('ProviderKeySetBody');

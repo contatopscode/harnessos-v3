@@ -3144,8 +3144,17 @@ export function registerApiRoutes(
   registerOpenApiRoute(addCodebaseRoute, async c => {
     const body = getValidatedBody(c, addCodebaseBodySchema);
 
+    // Enforce "exactly one of url/path" in the route handler. The object-level
+    // `.refine()` on `addCodebaseBodySchema` was removed because
+    // `@hono/zod-openapi` cannot represent a ZodEffects wrapper in OpenAPI 3.0.
+    // The two valid cases are: only `url` OR only `path`. Both and neither → 400.
+    const hasUrl = typeof body.url === 'string' && body.url.length > 0;
+    const hasPath = typeof body.path === 'string' && body.path.length > 0;
+    if (hasUrl === hasPath) {
+      return apiError(c, 400, 'Provide either "url" or "path", not both and not neither');
+    }
+
     try {
-      // .refine() guarantees exactly one of url/path is present.
       // For a local path, detect git-ness: a non-git directory registers as a
       // folder project (kind: 'folder') instead of being rejected. Folder-ness
       // is detected here, not declared in the request body, so the web form
@@ -4756,11 +4765,14 @@ export function registerApiRoutes(
 
     // Merge lock-based and DB-based active tracking.
     // Background workflows bypass the lock manager, so we combine both sources.
-    const lockActiveSet = new Set(stats.activeConversationIds);
+    // Defensive: older test mocks return `getStats()` without `activeConversationIds`,
+    // so coerce to [] before spreading. Production implementations always include it.
+    const activeIds = Array.isArray(stats.activeConversationIds) ? stats.activeConversationIds : [];
+    const lockActiveSet = new Set(activeIds);
     const backgroundConversationIds = runningWorkflowRows
       .map(r => r.conversation_id)
       .filter(id => !lockActiveSet.has(id));
-    const allActiveIds = [...stats.activeConversationIds, ...backgroundConversationIds];
+    const allActiveIds = [...activeIds, ...backgroundConversationIds];
 
     return c.json({
       status: 'ok',

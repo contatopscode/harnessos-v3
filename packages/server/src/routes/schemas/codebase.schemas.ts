@@ -24,10 +24,11 @@ export const addCodebaseBodySchema = z
     url: z.string().min(1).optional(),
     path: z.string().min(1).optional(),
   })
-  .refine(b => (b.url !== undefined) !== (b.path !== undefined), {
-    message: 'Provide either "url" or "path", not both and not neither',
-  })
   .openapi('AddCodebaseBody');
+// NOTE: object-level `.refine` was removed because `@hono/zod-openapi` cannot
+// represent a ZodEffects wrapper in OpenAPI 3.0. The "exactly one of url/path"
+// check is now enforced at the route handler in `api.ts` (it returns 400 with
+// the same message) — see where `addCodebaseBodySchema` is consumed.
 
 /** DELETE /api/codebases/:id response. */
 export const deleteCodebaseResponseSchema = z

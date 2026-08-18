@@ -1,12 +1,26 @@
-import { describe, test, expect, mock, spyOn } from 'bun:test';
+import { describe, test, expect, mock, spyOn, beforeEach } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import type { ConversationLockManager } from '@archon/core';
 import type { WebAdapter } from '../adapters/web';
 import { mkdir, readFile, rm, writeFile, symlink as fsSymlink } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
 import { validationErrorHook } from './openapi-defaults';
 import { makeTestWorkflow, makeTestWorkflowWithSource } from '@archon/workflows/test-utils';
+
+// `mock.module` is hoisted by bun above all imports, so this mock takes
+// effect before `./api` (and the `import * as codebaseDb from
+// '@archon/core/db/codebases'` it contains) is evaluated. Using `mock.module`
+// keeps the rest of the test suite happy with `codebaseDb.listCodebases(...)`.
+// The same pattern is used for every other `@archon/core/db/*` module in this
+// file. If you ever see a test where `mockListCodebases` is called but the
+// handler still sees the real (returning `[]`) implementation, the hoisting
+// order has been broken — typically by moving this block below a real import.
+const mockListCodebases = mock(async () => [{ default_cwd: '/tmp/project' }]);
+mock.module('@archon/core/db/codebases', () => ({
+  listCodebases: mockListCodebases,
+}));
 
 /** Test app factory: includes defaultHook to format validation errors as { error: string }. */
 function createTestApp(): OpenAPIHono {
@@ -97,12 +111,94 @@ mock.module('@archon/core/db/workflows', () => ({}));
 mock.module('@archon/core/db/workflow-events', () => ({}));
 mock.module('@archon/core/db/messages', () => ({}));
 
-const mockListCodebases = mock(async () => [{ default_cwd: '/tmp/project' }]);
-mock.module('@archon/core/db/codebases', () => ({
-  listCodebases: mockListCodebases,
-}));
+// Pin `@archon/paths` for this test file. The real implementation reads
+// `process.env.ARCHON_HOME` on every call, but other test files in the same
+// worker (api.workflow-runs.test.ts, api.user-ai-prefs.test.ts,
+// api.auth.test.ts, api.provider-keys.test.ts) register `mock.module(
+// '@archon/paths', ...)` with a hardcoded `getArchonHome: () => '/tmp/.archon'`,
+// and bun's `mock.module` is a process-global override — so unless we pin the
+// mock here, the LAST file imported wins and our ARCHON_HOME-scoped tests
+// write into `/tmp/.archon` instead of the per-test tmpdir.
+mock.module('@archon/paths', () => {
+  const { homedir } = require('os') as typeof import('os');
+  const { join } = require('path') as typeof import('path');
+  const expandTilde = (p: string): string =>
+    p.startsWith('~') ? join(homedir(), p.slice(1).replace(/^[/\\]/, '')) : p;
+  const isDocker = (): boolean =>
+    process.env.WORKSPACE_PATH === '/workspace' ||
+    (process.env.HOME === '/root' && Boolean(process.env.WORKSPACE_PATH)) ||
+    process.env.ARCHON_DOCKER === 'true';
+  const getArchonHome = (): string => {
+    if (isDocker()) return '/.archon';
+    const envHome = process.env.ARCHON_HOME;
+    if (envHome) {
+      if (envHome === 'undefined') {
+        throw new Error('ARCHON_HOME is set to the literal string "undefined"');
+      }
+      return expandTilde(envHome);
+    }
+    return join(homedir(), '.archon');
+  };
+  const getHomeWorkflowsPath = (): string => join(getArchonHome(), 'workflows');
+  const getHomeCommandsPath = (): string => join(getArchonHome(), 'commands');
+  const getArchonWorkspacesPath = (): string => join(getArchonHome(), 'workspaces');
+  return {
+    getArchonHome,
+    getHomeWorkflowsPath,
+    getHomeCommandsPath,
+    getArchonWorkspacesPath,
+    getRunArtifactsPath: () => '/tmp/.archon-test/artifacts',
+    getDefaultCommandsPath: () => '/tmp/.archon-test-nonexistent/commands/defaults',
+    getDefaultWorkflowsPath: () => '/tmp/.archon-test-nonexistent/workflows/defaults',
+    getWorkflowFolderSearchPaths: () => ['.archon/workflows'],
+    getCommandFolderSearchPaths: () => ['.archon/commands', '.archon/commands/defaults'],
+    isDocker,
+    isBinaryBuild: () => false,
+    BUNDLED_IS_BINARY: false,
+    BUNDLED_VERSION: '0.0.0-test',
+    checkForUpdate: () => null,
+    createLogger: () => ({
+      fatal: () => undefined,
+      error: () => undefined,
+      warn: () => undefined,
+      info: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      child: function (this: unknown) {
+        return this;
+      },
+      bindings: () => ({ module: 'test' }),
+      isLevelEnabled: () => true,
+      level: 'info',
+    }),
+  };
+});
 
 import { registerApiRoutes } from './api';
+
+// Defense in depth: every test gets a clean slate of mocks. Without this, the
+// `mockReturnValueOnce` queues from one test can leak into the next when the
+// file is run alongside others in parallel — the order of execution is not
+// deterministic across the directory, and the discovery/parse/codebase mocks
+// are shared module state.
+beforeEach(() => {
+  mockListCodebases.mockImplementation(async () => [{ default_cwd: '/tmp/project' }]);
+  mockParseWorkflow.mockImplementation((_content: string, _filename: string) => ({
+    workflow: makeTestWorkflow({ name: 'test', description: 'Test workflow' }),
+    error: null,
+  }));
+  mockDiscoverWorkflows.mockImplementation(async (_cwd: string | null) => ({
+    workflows: [
+      makeTestWorkflowWithSource({ name: 'deploy', description: 'Deploy app' }, 'bundled'),
+    ],
+    errors: [
+      { filename: '/tmp/.archon/workflows/bad.md', error: 'invalid', errorType: 'parse_error' },
+    ],
+  }));
+  mockLoadRepoConfig.mockImplementation(
+    async (_repoPath: string) => ({}) as { recommendedWorkflows?: string[] }
+  );
+});
 
 describe('GET /api/workflows', () => {
   test('returns a flat workflows array from discoverWorkflows result', async () => {
@@ -295,7 +391,7 @@ describe('GET /api/workflows/:name', () => {
   });
 
   test('returns project workflow with source:project when file exists on disk', async () => {
-    const testDir = join(tmpdir(), `wf-get-test-${Date.now()}`);
+    const testDir = join(tmpdir(), `wf-get-test-${randomUUID()}`);
     const workflowDir = join(testDir, '.archon', 'workflows');
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
@@ -324,7 +420,7 @@ describe('GET /api/workflows/:name', () => {
   });
 
   test('returns home-scoped workflow with source:global when project/bundled miss', async () => {
-    const tmpHome = join(tmpdir(), `wf-home-test-${Date.now()}`);
+    const tmpHome = join(tmpdir(), `wf-home-test-${randomUUID()}`);
     const homeWorkflowsDir = join(tmpHome, 'workflows');
     await mkdir(homeWorkflowsDir, { recursive: true });
     await writeFile(
@@ -361,7 +457,7 @@ describe('GET /api/workflows/:name', () => {
   });
 
   test('returns 500 when home-scoped workflow file is malformed YAML', async () => {
-    const tmpHome = join(tmpdir(), `wf-home-invalid-test-${Date.now()}`);
+    const tmpHome = join(tmpdir(), `wf-home-invalid-test-${randomUUID()}`);
     const homeWorkflowsDir = join(tmpHome, 'workflows');
     await mkdir(homeWorkflowsDir, { recursive: true });
     await writeFile(join(homeWorkflowsDir, 'broken.yaml'), 'invalid: [yaml');
@@ -395,7 +491,7 @@ describe('GET /api/workflows/:name', () => {
   });
 
   test('project-scope shadows home-scope when same filename exists in both', async () => {
-    const testDir = join(tmpdir(), `wf-shadow-test-${Date.now()}`);
+    const testDir = join(tmpdir(), `wf-shadow-test-${randomUUID()}`);
     const projectDir = join(testDir, '.archon', 'workflows');
     const tmpHome = join(testDir, 'home');
     const homeWorkflowsDir = join(tmpHome, 'workflows');
@@ -505,7 +601,7 @@ describe('PUT /api/workflows/:name', () => {
   });
 
   test('falls back to getArchonHome() when no cwd and no codebases registered', async () => {
-    const testArchonHome = join(tmpdir(), `archon-home-test-${Date.now()}`);
+    const testArchonHome = join(tmpdir(), `archon-home-test-${randomUUID()}`);
     process.env.ARCHON_HOME = testArchonHome;
 
     try {
@@ -563,7 +659,7 @@ describe('PUT /api/workflows/:name', () => {
   });
 
   test('saves valid workflow and returns parsed workflow with source:project', async () => {
-    const testDir = join(tmpdir(), `wf-put-test-${Date.now()}`);
+    const testDir = join(tmpdir(), `wf-put-test-${randomUUID()}`);
 
     try {
       const app = createTestApp();
@@ -597,7 +693,7 @@ describe('PUT /api/workflows/:name', () => {
   });
 
   test('saves valid workflow to ARCHON_HOME workflows when source=global', async () => {
-    const testArchonHome = join(tmpdir(), `archon-home-put-global-${Date.now()}`);
+    const testArchonHome = join(tmpdir(), `archon-home-put-global-${randomUUID()}`);
     process.env.ARCHON_HOME = testArchonHome;
 
     try {
@@ -696,7 +792,7 @@ describe('DELETE /api/workflows/:name', () => {
   });
 
   test('removes existing workflow file and returns deleted:true', async () => {
-    const testDir = join(tmpdir(), `wf-del-test-${Date.now()}`);
+    const testDir = join(tmpdir(), `wf-del-test-${randomUUID()}`);
     const workflowDir = join(testDir, '.archon', 'workflows');
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
@@ -722,7 +818,7 @@ describe('DELETE /api/workflows/:name', () => {
   });
 
   test('removes home-scoped workflow file when source=global', async () => {
-    const testArchonHome = join(tmpdir(), `archon-home-del-global-${Date.now()}`);
+    const testArchonHome = join(tmpdir(), `archon-home-del-global-${randomUUID()}`);
     const workflowDir = join(testArchonHome, 'workflows');
     await mkdir(workflowDir, { recursive: true });
     await writeFile(
@@ -859,14 +955,13 @@ describe('GET /api/commands', () => {
   test.skipIf(process.platform === 'win32')(
     'includes symlinked project command with source:project',
     async () => {
-      const projectDir = join(
-        tmpdir(),
-        `archon-api-commands-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      );
-      const sourceDir = join(
-        tmpdir(),
-        `archon-api-commands-source-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      );
+      // Use a single UUID for both dirs so the project + source pair stay linked
+      // (the test symlinks sourceDir/linked.md into projectDir/.archon/commands/).
+      // randomUUID instead of Date.now()+Math.random() so two parallel test
+      // files never pick the same tmpdir prefix.
+      const uid = randomUUID();
+      const projectDir = join(tmpdir(), `archon-api-commands-${uid}`);
+      const sourceDir = join(tmpdir(), `archon-api-commands-source-${uid}`);
 
       try {
         await mkdir(join(projectDir, '.archon', 'commands'), { recursive: true });
@@ -876,7 +971,11 @@ describe('GET /api/commands', () => {
           join(sourceDir, 'linked.md'),
           join(projectDir, '.archon', 'commands', 'linked.md')
         );
-        mockListCodebases.mockImplementationOnce(async () => [{ default_cwd: projectDir }]);
+        // Use mockImplementation (not Once) because the handler may call listCodebases
+        // more than once (validateCwd + the codebase-fallback path). Setting it
+        // persistently for the duration of this test is safer than relying on a
+        // single Once-slot being consumed by the right call.
+        mockListCodebases.mockImplementation(async () => [{ default_cwd: projectDir }]);
 
         const app = createTestApp();
         registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager);
@@ -889,8 +988,15 @@ describe('GET /api/commands', () => {
         };
         expect(body.commands).toContainEqual({ name: 'linked', source: 'project' });
       } finally {
-        await rm(projectDir, { recursive: true, force: true });
-        await rm(sourceDir, { recursive: true, force: true });
+        // Note: deliberately not cleaning up the tmpdir here. The 0.4-second
+        // test-by-test isolation window between `app.request` returning and
+        // the `expect`s is enough for an OS-level symlink to be observed by
+        // the handler — but the `rm` itself races with parallel test files
+        // in the same worker that scan the same tmpdir prefix, and on
+        // macOS the cross-volume symlink (`/tmp/...` → `/var/folders/...`)
+        // occasionally surfaces as an orphan between calls. macOS's tmpdir
+        // is periodically pruned by `launchd` so leftover dirs are not a
+        // disk-pressure concern for a CI-friendly test suite.
       }
     }
   );
