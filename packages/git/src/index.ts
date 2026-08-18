@@ -71,3 +71,10 @@ export {
   DEFAULT_SANDBOX_BASE,
 } from './git-sandbox';
 export type { SandboxCreateResult, SandboxDiffResult } from './git-sandbox';
+
+// Self-healing source bootstrap (Camada B of the Hardening spec). Wraps
+// the lower-level ensureSource so the boot recovery is reachable from
+// any caller (chat, sandbox, workflow) without depending on the
+// git-sandbox wrapper.
+export { ensureSource } from './boot/ensure-source';
+export type { EnsureSourceOpts, EnsureSourceResult } from './boot/ensure-source';

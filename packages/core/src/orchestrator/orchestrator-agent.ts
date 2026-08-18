@@ -7,7 +7,7 @@
  * - Does NOT require a project to be selected before starting a conversation
  */
 import { existsSync, realpathSync } from 'fs';
-import { createLogger, captureChatTurn } from '@archon/paths';
+import { createLogger, captureChatTurn, makeLogger } from '@archon/paths';
 import type {
   IPlatformAdapter,
   HandleMessageContext,
@@ -29,7 +29,14 @@ import { getAgentProvider, getProviderCapabilities } from '@archon/providers';
 import { buildManageRunTool } from './manage-run-tool';
 import { getArchonWorkspacesPath, ensureArchonWorkspacesPath } from '@archon/paths';
 import { syncArchonToWorktree } from '../utils/worktree-sync';
-import { execFileAsync, findRepoRoot, syncWorkspace, toBranchName, toRepoPath } from '@archon/git';
+import {
+  execFileAsync,
+  ensureSource,
+  findRepoRoot,
+  syncWorkspace,
+  toBranchName,
+  toRepoPath,
+} from '@archon/git';
 import type { WorkspaceSyncResult } from '@archon/git';
 import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
 import { findWorkflow, resolveWorkflowName } from '@archon/workflows/router';
@@ -381,6 +388,22 @@ async function resolveUserAiPrefsForChat(userId: string): Promise<UserAiPrefs> {
     getLog().warn({ err: err as Error, userId }, 'orchestrator.user_ai_prefs_resolve_failed');
     return {};
   }
+}
+
+/**
+ * Split a codebase name of the form `owner/repo` into its parts.
+ * Returns null when the name is not in the conventional GitHub layout
+ * — those codebases predate the workspace-per-owner convention and
+ * are skipped by the self-healing bootstrap (they keep whatever
+ * path was registered and never clone from GitHub).
+ */
+function inferOwnerRepoFromCodebaseName(name: string): { owner: string; repo: string } | null {
+  const slash = name.indexOf('/');
+  if (slash <= 0 || slash === name.length - 1) return null;
+  const owner = name.slice(0, slash);
+  const repo = name.slice(slash + 1);
+  if (owner === '' || repo === '') return null;
+  return { owner, repo };
 }
 
 /**
@@ -966,6 +989,25 @@ async function discoverAllWorkflows(conversation: Conversation): Promise<Discove
           );
         } else {
           try {
+            // Self-healing: if the source repo at default_cwd is missing
+            // (e.g., the workspace volume was wiped, or the user registered
+            // the codebase but never sent a chat), clone it before the
+            // syncWorkspace fetch — otherwise the fetch aborts with
+            // "fatal: cannot change to '<path>': No such file or directory".
+            // ensureSource emits boot.source_recovered on the wire so the
+            // alerting pipeline can PAGE on a recovery event (D.3).
+            const inferred = inferOwnerRepoFromCodebaseName(codebase.name);
+            if (inferred !== null) {
+              await ensureSource({
+                owner: inferred.owner,
+                repo: inferred.repo,
+                remoteUrl: codebase.repository_url ?? undefined,
+                logger: makeLogger({
+                  workflow: 'orchestrator.sync',
+                  threadId: conversation.id ?? undefined,
+                }),
+              });
+            }
             syncResult = await syncWorkspace(
               toRepoPath(codebase.default_cwd),
               codebase.default_branch ? toBranchName(codebase.default_branch) : undefined

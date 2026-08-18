@@ -18,6 +18,8 @@ import { access, mkdir } from 'fs/promises';
 import { dirname } from 'path';
 import type { RepoPath, WorktreePath } from './types';
 import { addSafeDirectory } from './repo';
+import { ensureSource } from './boot/ensure-source';
+import { makeLogger } from '@archon/paths';
 
 export interface SandboxCreateResult {
   branch: string;
@@ -206,26 +208,59 @@ export async function discardSandbox(
 }
 
 /**
- * Ensure the canonical repo at `repoPath` exists and is a git repo.
- * If not, clone from `repositoryUrl` (or throw if no URL is provided).
+ * Sandbox-Mode-shaped wrapper that preserves the legacy signature
+ * `(repoPath, repositoryUrl) => { cloned, reason? }`. Internally it
+ * delegates to `ensureSource` when the path follows the conventional
+ * `~/.archon/workspaces/{owner}/{repo}/source` layout (so the
+ * `boot.source_recovered` event still fires), and falls back to a
+ * direct clone for arbitrary paths (legacy / local-dev layouts).
  *
- * Used by Sandbox Mode because the user can create a sandbox before
- * the first chat has run for a codebase. Normally the chat loop
- * (orchestrator-agent.ts:968 `syncWorkspace`) implicitly clones the
- * repo via the `git fetch` step — but the orchestrator short-circuits
- * to a 500 when `default_cwd` does not exist yet, and sandbox creation
- * runs BEFORE any chat can trigger the clone. So we clone here.
- *
- * Idempotent: re-running on a populated repo is a no-op.
+ * The fallback is necessary because some codebases were registered
+ * with `default_cwd` pointing at an arbitrary local checkout
+ * (e.g., `/Users/.../Volund/harness-v1`) before the workspace
+ * convention was enforced. Rewriting those rows is a separate
+ * refactor; in the meantime this wrapper does the right thing for
+ * both layouts.
  */
 export async function ensureRepoCloned(
   repoPath: string,
   repositoryUrl: string | null | undefined
 ): Promise<{ cloned: boolean; reason?: string }> {
+  const inferred = inferOwnerRepoFromPath(repoPath);
+  if (inferred !== null) {
+    const result = await ensureSource({
+      owner: inferred.owner,
+      repo: inferred.repo,
+      baseDir: inferred.baseDir,
+      remoteUrl: repositoryUrl ?? undefined,
+    });
+    return { cloned: result.recovered };
+  }
+  // Arbitrary path: skip the structured event (no owner/repo context)
+  // and clone directly. This is the legacy behavior preserved for
+  // local-dev layouts.
+  return legacyEnsureRepoCloned(repoPath, repositoryUrl);
+}
+
+/**
+ * Direct clone of `repoPath` from `repositoryUrl`. Used for codebases
+ * whose `default_cwd` does not follow the conventional workspace
+ * layout (legacy / local-dev). Mirrors the original behavior from
+ * commit 7875fb0c.
+ */
+async function legacyEnsureRepoCloned(
+  repoPath: string,
+  repositoryUrl: string | null | undefined
+): Promise<{ cloned: boolean; reason?: string }> {
   await addSafeDirectory(repoPath as RepoPath);
-  // Fast path: repo already exists.
   try {
     await access(`${repoPath}/.git`);
+    // Emit the same present event the conventional-layout path emits
+    // so alerting (D.3) and `archon doctor` (D.4) see a uniform
+    // timeline across both layouts.
+    makeLogger({ module: 'git.boot.ensure-source' })('boot.source_present', {
+      source_path: repoPath,
+    });
     return { cloned: false };
   } catch {
     // not present — fall through to clone
@@ -236,16 +271,9 @@ export async function ensureRepoCloned(
         'Re-register the codebase with a valid Git URL, or run a chat turn first to trigger the implicit clone.'
     );
   }
-  // Ensure parent directory exists. The default_cwd convention puts
-  // the clone at <workspaces>/<owner>/<repo>/source — the parent is
-  // what needs the mkdir. The source/ subdir must NOT exist (git clone
-  // refuses to clone into a non-empty dir), so we never pre-create it.
   await mkdir(dirname(repoPath), { recursive: true });
   try {
     await access(repoPath);
-    // Path exists but is not a git repo (no .git). Bail loudly —
-    // blindly clobbering a non-empty dir is exactly the footgun the
-    // existing clone.ts guards against.
     throw new Error(
       `Codebase path ${repoPath} exists but is not a git repository. ` +
         'Remove the directory (or point the codebase at a different path) and retry.'
@@ -257,8 +285,32 @@ export async function ensureRepoCloned(
       throw err;
     }
   }
-  // Clone with a 5-min budget — private repos over slow links can take a
-  // couple of minutes. The terminal prompts the user while this runs.
+  // Emit a recovery event even on the legacy path so alerts (D.3)
+  // fire the same way regardless of which layout the codebase uses.
+  const logger = makeLogger({ module: 'git.boot.ensure-source' });
+  logger('boot.source_recovered_start', { source_path: repoPath });
   await execFileAsync('git', ['clone', repositoryUrl, repoPath], { timeout: 300_000 });
+  logger('boot.source_recovered', { source_path: repoPath, from_url: repositoryUrl });
   return { cloned: true };
+}
+
+/**
+ * Split a canonical source path of the form `<baseDir>/<owner>/<repo>/source`
+ * into its components. Returns null when the path does not end in
+ * `/source` (the marker segment) so we don't accidentally try to
+ * bootstrap a path that was constructed under a different convention.
+ */
+function inferOwnerRepoFromPath(
+  repoPath: string
+): { owner: string; repo: string; baseDir: string } | null {
+  const trimmed = repoPath.replace(/\/+$/, '');
+  const parts = trimmed.split('/');
+  if (parts.length < 4 || parts[parts.length - 1] !== 'source') {
+    return null;
+  }
+  const repo = parts[parts.length - 2] ?? '';
+  const owner = parts[parts.length - 3] ?? '';
+  const baseDir = parts.slice(0, parts.length - 3).join('/');
+  if (owner === '' || repo === '') return null;
+  return { owner, repo, baseDir };
 }

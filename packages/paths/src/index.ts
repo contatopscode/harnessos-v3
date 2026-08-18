@@ -51,6 +51,12 @@ export { loadArchonEnv, isVerboseBoot } from './env-loader';
 // Logger
 export { createLogger, setLogLevel, getLogLevel, rootLogger } from './logger';
 export type { Logger } from './logger';
+export { makeLogger } from './structured-logger';
+export type {
+  StructuredEventLogger,
+  MakeLoggerOpts,
+  StructuredLogLevel,
+} from './structured-logger';
 
 // Build-time constants (rewritten by scripts/build-binaries.sh)
 export { BUNDLED_IS_BINARY, BUNDLED_VERSION, BUNDLED_GIT_COMMIT } from './bundled-build';

@@ -1254,11 +1254,15 @@ describe('discoverAllWorkflows — remote sync', () => {
     expect(mockSendQuery).toHaveBeenCalled();
     const requestOptions = mockSendQuery.mock.calls[0][3] as Record<string, unknown>;
     const sp = requestOptions.systemPrompt as Record<string, unknown>;
-    expect(sp).toEqual({
+    expect(sp).toMatchObject({
       type: 'preset',
       preset: 'claude_code',
-      append: 'orchestrator system append',
     });
+    // `append` is the static orchestrator system append (may be extended at
+    // runtime with active-agent / memory / run-management sections — those
+    // are covered by dedicated tests, not this one).
+    expect(typeof sp.append).toBe('string');
+    expect(sp.append as string).toContain('orchestrator system append');
   });
 
   test('passes plain string systemPrompt for non-claude provider', async () => {
@@ -1272,7 +1276,7 @@ describe('discoverAllWorkflows — remote sync', () => {
     expect(mockSendQuery).toHaveBeenCalled();
     const requestOptions = mockSendQuery.mock.calls[0][3] as Record<string, unknown>;
     expect(typeof requestOptions.systemPrompt).toBe('string');
-    expect(requestOptions.systemPrompt).toBe('orchestrator system append');
+    expect(requestOptions.systemPrompt as string).toContain('orchestrator system append');
   });
 
   test('appends the run-management section (and no native tool) for a project-scoped non-native-tool provider', async () => {
