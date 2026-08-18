@@ -26,7 +26,6 @@ import {
   getWorktreeBase,
   mergeSandbox as mergeSandboxImpl,
   toBranchName,
-  type SandboxDiffResult,
 } from '@archon/git';
 /** Structural type for the isolation_environments row. Avoids pulling
  *  @archon/isolation as a server dep — the real type lives there. */
@@ -167,7 +166,23 @@ export const diffSandboxRoute = createRoute({
   request: { params: z.object({ id: z.string() }) },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.custom<SandboxDiffResult>() } },
+      // Use a real Zod object (not z.custom) so the OpenAPI generator
+      // can render it. SandboxDiffResult from @archon/git matches this
+      // shape — keep both in sync if either changes.
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              branch: z.string(),
+              baseBranch: z.string(),
+              stat: z.string(),
+              preview: z.string(),
+              aheadBy: z.number().int().nonnegative(),
+              behindBy: z.number().int().nonnegative(),
+            })
+            .openapi('SandboxDiffResult'),
+        },
+      },
       description: 'Diff stat + preview + ahead/behind counts',
     },
     404: jsonError('Sandbox not found'),
