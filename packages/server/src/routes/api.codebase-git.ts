@@ -20,7 +20,6 @@ import {
   getRecentLog,
   publishBranch as publishBranchImpl,
   revertLastCommit as revertLastCommitImpl,
-  type GitLogResult,
 } from '@archon/git';
 import * as codebaseDb from '@archon/core/db/codebases';
 import { apiError } from './api-error';
@@ -50,7 +49,29 @@ export const getLogRoute = createRoute({
   request: { params: codebaseIdParamsSchema },
   responses: {
     200: {
-      content: { 'application/json': { schema: z.custom<GitLogResult>() } },
+      // Real Zod object (not z.custom / z.unknown) so the OpenAPI
+      // generator can render it. The shape mirrors `GitLogResult`
+      // from @archon/git; keep both in sync if either changes.
+      content: {
+        'application/json': {
+          schema: z
+            .object({
+              branch: z.string(),
+              totalCommits: z.number().int().nonnegative(),
+              dirty: z.boolean(),
+              commits: z.array(
+                z.object({
+                  sha: z.string(),
+                  shortSha: z.string(),
+                  subject: z.string(),
+                  author: z.string(),
+                  timestamp: z.number().int(),
+                })
+              ),
+            })
+            .openapi('GitLogResult'),
+        },
+      },
       description: 'Recent commits with dirty flag',
     },
     404: jsonError('Codebase not found'),
