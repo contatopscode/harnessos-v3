@@ -22,6 +22,7 @@ import {
   DEFAULT_SANDBOX_BASE,
   diffSandbox as diffSandboxImpl,
   discardSandbox as discardSandboxImpl,
+  ensureRepoCloned,
   getWorktreeBase,
   mergeSandbox as mergeSandboxImpl,
   toBranchName,
@@ -251,6 +252,16 @@ export async function postCreateSandbox(c: Context): Promise<Response> {
   };
   const slug = body.slug?.trim() || defaultSlug();
   const baseBranch = body.baseBranch?.trim() || DEFAULT_SANDBOX_BASE;
+
+  // Clone the source repo on demand. Normally the chat loop triggers
+  // this via syncWorkspace, but Sandbox Mode can run before the user
+  // has sent a single chat message — so the canonical repo at
+  // default_cwd may not exist yet. ensureRepoCloned is idempotent.
+  try {
+    await ensureRepoCloned(codebase.default_cwd, codebase.repository_url);
+  } catch (err) {
+    return apiError(c, 500, 'Failed to prepare codebase source', (err as Error).message);
+  }
 
   const { base: worktreeParent } = getWorktreeBase(
     codebase.default_cwd as Parameters<typeof getWorktreeBase>[0],

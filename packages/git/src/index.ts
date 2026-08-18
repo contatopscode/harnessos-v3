@@ -67,6 +67,7 @@ export {
   diffSandbox,
   mergeSandbox,
   discardSandbox,
+  ensureRepoCloned,
   DEFAULT_SANDBOX_BASE,
 } from './git-sandbox';
 export type { SandboxCreateResult, SandboxDiffResult } from './git-sandbox';

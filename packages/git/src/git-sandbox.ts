@@ -14,6 +14,8 @@
  * (`sandbox/`) so `git branch | grep sandbox/` gives a clean audit trail.
  */
 import { execFileAsync } from './exec';
+import { access, mkdir } from 'fs/promises';
+import { dirname } from 'path';
 import type { RepoPath, WorktreePath } from './types';
 import { addSafeDirectory } from './repo';
 
@@ -201,4 +203,62 @@ export async function discardSandbox(
   await execFileAsync('git', ['-C', repoPath, 'branch', '-D', branch], { timeout: 5_000 });
 
   return { discarded: true };
+}
+
+/**
+ * Ensure the canonical repo at `repoPath` exists and is a git repo.
+ * If not, clone from `repositoryUrl` (or throw if no URL is provided).
+ *
+ * Used by Sandbox Mode because the user can create a sandbox before
+ * the first chat has run for a codebase. Normally the chat loop
+ * (orchestrator-agent.ts:968 `syncWorkspace`) implicitly clones the
+ * repo via the `git fetch` step — but the orchestrator short-circuits
+ * to a 500 when `default_cwd` does not exist yet, and sandbox creation
+ * runs BEFORE any chat can trigger the clone. So we clone here.
+ *
+ * Idempotent: re-running on a populated repo is a no-op.
+ */
+export async function ensureRepoCloned(
+  repoPath: string,
+  repositoryUrl: string | null | undefined
+): Promise<{ cloned: boolean; reason?: string }> {
+  await addSafeDirectory(repoPath as RepoPath);
+  // Fast path: repo already exists.
+  try {
+    await access(`${repoPath}/.git`);
+    return { cloned: false };
+  } catch {
+    // not present — fall through to clone
+  }
+  if (!repositoryUrl) {
+    throw new Error(
+      `Codebase source directory does not exist at ${repoPath} and no repository_url is set. ` +
+        'Re-register the codebase with a valid Git URL, or run a chat turn first to trigger the implicit clone.'
+    );
+  }
+  // Ensure parent directory exists. The default_cwd convention puts
+  // the clone at <workspaces>/<owner>/<repo>/source — the parent is
+  // what needs the mkdir. The source/ subdir must NOT exist (git clone
+  // refuses to clone into a non-empty dir), so we never pre-create it.
+  await mkdir(dirname(repoPath), { recursive: true });
+  try {
+    await access(repoPath);
+    // Path exists but is not a git repo (no .git). Bail loudly —
+    // blindly clobbering a non-empty dir is exactly the footgun the
+    // existing clone.ts guards against.
+    throw new Error(
+      `Codebase path ${repoPath} exists but is not a git repository. ` +
+        'Remove the directory (or point the codebase at a different path) and retry.'
+    );
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      // Good — the dir does not exist, safe to clone.
+    } else {
+      throw err;
+    }
+  }
+  // Clone with a 5-min budget — private repos over slow links can take a
+  // couple of minutes. The terminal prompts the user while this runs.
+  await execFileAsync('git', ['clone', repositoryUrl, repoPath], { timeout: 300_000 });
+  return { cloned: true };
 }
