@@ -314,7 +314,12 @@ export function ChatPage(): ReactElement {
         </div>
       ) : null}
 
-      <ChatComposer onSend={onSend} disabled={busy} />
+      <ChatComposer
+        onSend={onSend}
+        disabled={busy}
+        conversationId={activeConvId}
+        codebaseId={projectId ?? null}
+      />
     </section>
   );
 }

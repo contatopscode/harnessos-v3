@@ -283,6 +283,14 @@ import {
   discardSandboxRoute,
 } from './api.sandboxes';
 import {
+  getConversationSandboxRoute,
+  setConversationSandboxRoute,
+  clearConversationSandboxRoute,
+  getConversationSandbox,
+  setConversationSandbox,
+  clearConversationSandbox,
+} from './api.conversation-sandbox';
+import {
   workflowRunSchema,
   dashboardWorkflowRunSchema,
   workflowRunStatusSchema,
@@ -3332,6 +3340,13 @@ export function registerApiRoutes(
   registerOpenApiRoute(diffSandboxRoute, getSandboxDiff);
   registerOpenApiRoute(mergeSandboxRoute, postMergeSandbox);
   registerOpenApiRoute(discardSandboxRoute, postDiscardSandbox);
+
+  // Per-conversation sandbox selection — the explicit counterpart to the
+  // orchestrator's auto-detect. The chat composer "in sandbox X" badge
+  // reads GET, the selector POSTs, the "exit sandbox" button DELETEs.
+  registerOpenApiRoute(getConversationSandboxRoute, getConversationSandbox);
+  registerOpenApiRoute(setConversationSandboxRoute, setConversationSandbox);
+  registerOpenApiRoute(clearConversationSandboxRoute, clearConversationSandbox);
 
   // POST /api/codebases/:id/skills - Install the bundled Archon skills
   // (`archon` + `manage-run`) into the project directory. Powers the

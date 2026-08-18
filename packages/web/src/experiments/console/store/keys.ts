@@ -35,4 +35,5 @@ export const K = {
   gitLog: (projectId: string): string => `git-log:${projectId}`,
   sandboxes: (projectId: string): string => `sandboxes:${projectId}`,
   sandboxDiff: (sandboxId: string): string => `sandbox-diff:${sandboxId}`,
+  sandboxState: (conversationId: string): string => `sandbox-state:${conversationId}`,
 } as const;
