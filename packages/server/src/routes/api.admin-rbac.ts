@@ -3,6 +3,7 @@
  *
  * Routes (all require admin:users OR admin:roles permission):
  *   GET    /api/admin/users                       — list users with role+permission slugs
+ *   POST   /api/admin/users                       — create a user shell (no auth)
  *   GET    /api/admin/roles                       — list roles with permission slugs
  *   GET    /api/admin/permissions                 — list the closed permission catalog
  *   POST   /api/admin/roles                       — create a new role
@@ -20,10 +21,12 @@ import { requireWebPermission } from '../auth/rbac';
 import * as rolesDb from '@archon/core/db/roles';
 import * as permsDb from '@archon/core/db/permissions';
 import * as userRoleDb from '@archon/core/db/user-roles';
+import * as usersDb from '@archon/core/db/users';
 import { createLogger } from '@archon/paths';
 import { pool } from '@archon/core/db/connection';
 import {
   createRoleBodySchema,
+  createUserBodySchema,
   assignUserRoleBodySchema,
   assignPermissionBodySchema,
   type Role,
@@ -212,6 +215,36 @@ rbac.delete('/roles/:id/permissions/:slug', async c => {
     'admin.role_permission_unassigned'
   );
   return c.json({ ok: true, removed });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/admin/users — create a user shell (no auth account)
+// ---------------------------------------------------------------------------
+rbac.post('/users', async c => {
+  const guard = await requireWebPermission(c, 'admin:users');
+  if ('error' in guard) return guard.error;
+  const body = await c.req.json().catch(() => null);
+  const parsed = createUserBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return apiError(c, 400, 'Invalid body', parsed.error.message);
+  }
+  if (!parsed.data.display_name && !parsed.data.email) {
+    return apiError(c, 400, 'Provide at least one of display_name or email');
+  }
+  const user = await usersDb.createUserShell({
+    displayName: parsed.data.display_name ?? null,
+    email: parsed.data.email ?? null,
+  });
+  log.info(
+    {
+      newUserId: user.id,
+      email: user.email,
+      displayName: user.display_name,
+      by: guard.userId,
+    },
+    'admin.user_shell_created'
+  );
+  return c.json({ user }, 201);
 });
 
 // ---------------------------------------------------------------------------

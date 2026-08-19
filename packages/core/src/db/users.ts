@@ -214,6 +214,47 @@ export async function updateUserDisplayName(userId: string, displayName: string)
 }
 
 /**
+ * Create a user "shell" — a `remote_agent_users` row with display_name +
+ * email, no identity rows attached. Used by the admin UI to onboard a
+ * user that hasn't yet signed up via Better Auth — the admin can
+ * pre-attach roles, then the user finishes the signup via the standard
+ * /auth/invite flow.
+ *
+ * Idempotent on email: if a user with the same (case-insensitive) email
+ * already exists, returns the existing row instead of throwing. The
+ * UNIQUE-constraint-via-email doesn't exist in the schema (email is
+ * not unique), so we do a case-insensitive lookup first.
+ */
+export async function createUserShell(input: {
+  displayName?: string | null;
+  email?: string | null;
+}): Promise<User> {
+  const email = input.email?.trim().toLowerCase() || null;
+  const displayName = input.displayName?.trim() || null;
+
+  if (email) {
+    const existing = await pool.query<User>(
+      'SELECT * FROM remote_agent_users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+      [email]
+    );
+    if (existing.rows[0]) {
+      getLog().info({ userId: existing.rows[0].id, email }, 'user.shell_email_collision');
+      return existing.rows[0];
+    }
+  }
+
+  const result = await pool.query<User>(
+    `INSERT INTO remote_agent_users (display_name, email)
+     VALUES ($1, $2)
+     RETURNING *`,
+    [displayName, email]
+  );
+  const row = result.rows[0];
+  getLog().info({ userId: row.id, email }, 'user.shell_created');
+  return row;
+}
+
+/**
  * Raised when a GitHub account is already linked to a different Archon user.
  * Connecting must never silently reassign an identity from one user to another.
  */

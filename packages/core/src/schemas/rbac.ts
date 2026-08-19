@@ -112,6 +112,19 @@ export const assignUserRoleBodySchema = z
   })
   .openapi('AssignUserRoleBody');
 
+/** POST /api/admin/users — creates a user shell (display_name + email, no auth). */
+export const createUserBodySchema = z
+  .object({
+    display_name: z.string().min(1).max(255).optional(),
+    email: z
+      .string()
+      .email()
+      .max(255)
+      .optional()
+      .transform(v => (v ? v.trim().toLowerCase() : v)),
+  })
+  .openapi('CreateUserBody');
+
 // ---------------------------------------------------------------------------
 // User direct permission (override)
 // ---------------------------------------------------------------------------

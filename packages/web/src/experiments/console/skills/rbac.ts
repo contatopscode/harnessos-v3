@@ -134,6 +134,17 @@ export function listUsers(): Promise<{ users: UserWithPermissions[] }> {
   return requestJson('/api/admin/users');
 }
 
+/** POST /api/admin/users — creates a user shell (no auth account). */
+export function createUserShell(body: {
+  display_name?: string;
+  email?: string;
+}): Promise<{ user: UserWithPermissions }> {
+  return requestJson('/api/admin/users', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 /** POST /api/admin/users/:id/roles */
 export function assignRoleToUser(
   userId: string,

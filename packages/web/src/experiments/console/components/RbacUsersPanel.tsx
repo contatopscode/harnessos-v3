@@ -22,11 +22,12 @@ import {
   removeRoleFromUser,
   setUserDirectPermission,
   clearUserDirectPermission,
+  createUserShell,
   type UserWithPermissions,
   type RoleWithPermissions,
   type Permission,
 } from '../skills/rbac';
-import { RefreshCw, ChevronDown, ChevronRight, Search } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, Search, UserPlus, X } from 'lucide-react';
 
 type Filter = 'all' | 'admin' | 'member' | 'sandbox-user' | 'viewer';
 
@@ -50,6 +51,7 @@ export function RbacUsersPanel(): ReactElement {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const rolesBySlug = useMemo<ReadonlyMap<string, RoleWithPermissions>>(
     () => new Map(roles.map(r => [r.slug, r])),
@@ -150,12 +152,44 @@ export function RbacUsersPanel(): ReactElement {
     [refresh]
   );
 
+  const handleCreate = useCallback(
+    async (form: { displayName: string; email: string }): Promise<void> => {
+      setBusy(true);
+      setError(null);
+      try {
+        await createUserShell({
+          display_name: form.displayName.trim() || undefined,
+          email: form.email.trim() || undefined,
+        });
+        setCreating(false);
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to create');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [refresh]
+  );
+
   if (loading && users.length === 0) {
     return <p className="text-sm text-text-tertiary">Carregando usuários…</p>;
   }
 
   return (
     <div className="space-y-4">
+      {creating && (
+        <CreateUserForm
+          busy={busy}
+          onCancel={() => {
+            setCreating(false);
+          }}
+          onSubmit={form => {
+            void handleCreate(form);
+          }}
+        />
+      )}
+
       <Toolbar
         search={search}
         onSearch={setSearch}
@@ -163,6 +197,9 @@ export function RbacUsersPanel(): ReactElement {
         onFilter={setFilter}
         loading={loading || busy}
         onRefresh={() => void refresh()}
+        onCreate={() => {
+          setCreating(true);
+        }}
       />
 
       {error && (
@@ -230,10 +267,11 @@ interface ToolbarProps {
   onFilter: (f: Filter) => void;
   loading: boolean;
   onRefresh: () => void;
+  onCreate: () => void;
 }
 
 function Toolbar(props: ToolbarProps): ReactElement {
-  const { search, onSearch, filter, onFilter, loading, onRefresh } = props;
+  const { search, onSearch, filter, onFilter, loading, onRefresh, onCreate } = props;
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="relative flex-1 min-w-[220px]">
@@ -278,6 +316,15 @@ function Toolbar(props: ToolbarProps): ReactElement {
       >
         <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
         Atualizar
+      </button>
+      <button
+        type="button"
+        onClick={onCreate}
+        disabled={loading}
+        className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+      >
+        <UserPlus size={12} />
+        Novo usuário
       </button>
     </div>
   );
@@ -526,5 +573,69 @@ function UserEditor(props: UserEditorProps): ReactElement {
         </div>
       </div>
     </div>
+  );
+}
+
+interface CreateUserFormProps {
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (form: { displayName: string; email: string }) => void;
+}
+
+function CreateUserForm(props: CreateUserFormProps): ReactElement {
+  const { busy, onCancel, onSubmit } = props;
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+
+  const submit = (e: React.FormEvent): void => {
+    e.preventDefault();
+    onSubmit({ displayName, email });
+  };
+
+  const isValid = displayName.trim().length > 0 || email.trim().length > 0;
+
+  return (
+    <form
+      onSubmit={submit}
+      className="grid gap-2 rounded-lg border border-blue-500/40 bg-blue-500/5 p-3 text-sm md:grid-cols-[1fr_1fr_auto_auto]"
+    >
+      <input
+        placeholder="Nome (ex: João Silva)"
+        value={displayName}
+        onChange={e => {
+          setDisplayName(e.target.value);
+        }}
+        className="rounded-md border border-border bg-surface-inset px-2 py-1 text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
+      />
+      <input
+        type="email"
+        placeholder="Email (ex: joao@empresa.com)"
+        value={email}
+        onChange={e => {
+          setEmail(e.target.value);
+        }}
+        className="rounded-md border border-border bg-surface-inset px-2 py-1 text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={onCancel}
+        className="inline-flex items-center justify-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1 text-xs text-text-secondary hover:bg-surface-hover"
+      >
+        <X size={11} />
+        Cancelar
+      </button>
+      <button
+        type="submit"
+        disabled={busy || !isValid}
+        className="inline-flex items-center justify-center gap-1.5 rounded-md bg-brand px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
+      >
+        <UserPlus size={11} />
+        Criar
+      </button>
+      <p className="md:col-span-4 text-[10px] text-text-tertiary">
+        Cria um user shell sem senha. Pra entrar no sistema, a pessoa precisa fazer signup via
+        Better Auth — você pode emitir um invite em /admin/invites (use o email cadastrado aqui).
+      </p>
+    </form>
   );
 }

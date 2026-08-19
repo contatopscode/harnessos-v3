@@ -54,6 +54,7 @@ export {
   createRoleBodySchema,
   assignPermissionBodySchema,
   assignUserRoleBodySchema,
+  createUserBodySchema,
   permissionRowSchema,
   userRoleRowSchema,
   userDirectPermissionRowSchema,
