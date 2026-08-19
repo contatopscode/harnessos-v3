@@ -28,6 +28,10 @@ COPY packages/providers/package.json ./packages/providers/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 COPY packages/workflows/package.json ./packages/workflows/
+# apps/forge is a separate webapp in the monorepo (PR2-PR3+). Its
+# package.json must be present so the workspace lockfile resolves
+# correctly even though this image only runs the HarnessOS server.
+COPY apps/forge/package.json ./apps/forge/
 
 # Install ALL dependencies (including devDependencies needed for web build)
 # --linker=hoisted: Bun's default "isolated" linker stores packages in
