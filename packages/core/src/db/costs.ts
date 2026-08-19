@@ -282,10 +282,11 @@ export async function getCostBreakdown(windowDays = 30): Promise<CostBreakdown> 
     [windowDays]
   );
 
-  // by_codebase — join codebases for human-readable name
+  // by_codebase — join codebases for human-readable name.
+  // NOTE: codebases has no `slug` column (use `name`, typically 'owner/repo').
   const byCodebaseResult = await pool.query<BreakdownRow>(
     `SELECT
-       COALESCE(c.name, c.slug, 'sem projeto') AS key,
+       COALESCE(c.name, 'sem projeto') AS key,
        SUM(co.amount_usd)::numeric AS amount_usd,
        SUM(co.amount_brl)::numeric AS amount_brl,
        SUM(co.tokens_in) AS tokens_in,
@@ -294,7 +295,7 @@ export async function getCostBreakdown(windowDays = 30): Promise<CostBreakdown> 
      FROM remote_agent_costs co
      LEFT JOIN remote_agent_codebases c ON c.id = co.codebase_id
      WHERE co.created_at >= NOW() - ($1::int || ' days')::interval
-     GROUP BY c.name, c.slug
+     GROUP BY c.name
      ORDER BY amount_usd DESC`,
     [windowDays]
   );
