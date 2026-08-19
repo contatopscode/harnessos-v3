@@ -10,13 +10,14 @@
  * Mutation surface goes through the 12 endpoints in @archon/server
  * (api.admin-rbac.ts), wrapped by packages/web/.../skills/rbac.ts.
  *
- * Layout: a flat table (responsive: stacked cards on narrow viewports).
- * Search box filters by email / display_name / role slug.
+ * Styling uses the Console's `.console-root` theme tokens — no
+ * hard-coded `bg-white` / zinc utilities that ignore the active theme.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactElement } from 'react';
 import {
   listUsers,
   listRoles,
+  listPermissions,
   assignRoleToUser,
   removeRoleFromUser,
   setUserDirectPermission,
@@ -25,7 +26,7 @@ import {
   type RoleWithPermissions,
   type Permission,
 } from '../skills/rbac';
-import { listPermissions } from '../skills/rbac';
+import { RefreshCw, ChevronDown, ChevronRight, Search } from 'lucide-react';
 
 type Filter = 'all' | 'admin' | 'member' | 'sandbox-user' | 'viewer';
 
@@ -64,8 +65,7 @@ export function RbacUsersPanel(): ReactElement {
       setRoles(r.roles);
       setPermissions(Object.values(p.permissions).flat());
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load';
-      setError(msg);
+      setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export function RbacUsersPanel(): ReactElement {
         await assignRoleToUser(userId, roleSlug);
         await refresh();
       } catch (err) {
-        setError(formatHttp(err));
+        setError(err instanceof Error ? err.message : 'Failed to assign');
       } finally {
         setBusy(false);
       }
@@ -110,7 +110,7 @@ export function RbacUsersPanel(): ReactElement {
         await removeRoleFromUser(userId, roleSlug);
         await refresh();
       } catch (err) {
-        setError(formatHttp(err));
+        setError(err instanceof Error ? err.message : 'Failed to remove');
       } finally {
         setBusy(false);
       }
@@ -126,7 +126,7 @@ export function RbacUsersPanel(): ReactElement {
         await setUserDirectPermission(userId, slug, granted);
         await refresh();
       } catch (err) {
-        setError(formatHttp(err));
+        setError(err instanceof Error ? err.message : 'Failed to set override');
       } finally {
         setBusy(false);
       }
@@ -142,7 +142,7 @@ export function RbacUsersPanel(): ReactElement {
         await clearUserDirectPermission(userId, slug);
         await refresh();
       } catch (err) {
-        setError(formatHttp(err));
+        setError(err instanceof Error ? err.message : 'Failed to clear override');
       } finally {
         setBusy(false);
       }
@@ -151,71 +151,44 @@ export function RbacUsersPanel(): ReactElement {
   );
 
   if (loading && users.length === 0) {
-    return <p className="text-sm text-zinc-500">Carregando usuários…</p>;
+    return <p className="text-sm text-text-tertiary">Carregando usuários…</p>;
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          placeholder="Buscar email, nome ou role…"
-          value={search}
-          onChange={e => {
-            setSearch(e.target.value);
-          }}
-          className="flex-1 min-w-[200px] rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        />
-        <div className="flex gap-1 text-xs">
-          {(['all', 'admin', 'member', 'sandbox-user', 'viewer'] as Filter[]).map(f => (
-            <button
-              key={f}
-              type="button"
-              onClick={() => {
-                setFilter(f);
-              }}
-              className={`rounded px-2 py-1 ${
-                filter === f
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-              }`}
-            >
-              {f === 'all' ? 'Todos' : f}
-            </button>
-          ))}
-        </div>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={busy || loading}
-          className="rounded bg-zinc-100 px-3 py-1.5 text-xs hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:hover:bg-zinc-700"
-        >
-          {loading ? 'Atualizando…' : 'Atualizar'}
-        </button>
-      </div>
+      <Toolbar
+        search={search}
+        onSearch={setSearch}
+        filter={filter}
+        onFilter={setFilter}
+        loading={loading || busy}
+        onRefresh={() => void refresh()}
+      />
 
       {error && (
-        <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {error}
         </div>
       )}
 
-      <div className="text-xs text-zinc-500">
+      <div className="text-xs text-text-tertiary">
         {filtered.length} de {users.length} usuários
       </div>
 
-      <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
-        <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-surface-inset">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">Usuário</th>
-              <th className="px-3 py-2 text-left font-medium">Roles</th>
-              <th className="px-3 py-2 text-left font-medium">Permissões (via roles)</th>
-              <th className="px-3 py-2 text-left font-medium">Total</th>
-              <th className="px-3 py-2 text-right font-medium">Ações</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Usuário</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Roles</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">
+                Permissões (via roles)
+              </th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Total</th>
+              <th className="px-3 py-2 text-right font-medium text-text-secondary">Ações</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <tbody className="divide-y divide-border">
             {filtered.map(u => {
               const isOpen = expanded === u.id;
               return (
@@ -238,7 +211,7 @@ export function RbacUsersPanel(): ReactElement {
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-xs text-zinc-500">
+                <td colSpan={5} className="px-3 py-6 text-center text-xs text-text-tertiary">
                   Nenhum usuário corresponde ao filtro.
                 </td>
               </tr>
@@ -246,6 +219,66 @@ export function RbacUsersPanel(): ReactElement {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+interface ToolbarProps {
+  search: string;
+  onSearch: (v: string) => void;
+  filter: Filter;
+  onFilter: (f: Filter) => void;
+  loading: boolean;
+  onRefresh: () => void;
+}
+
+function Toolbar(props: ToolbarProps): ReactElement {
+  const { search, onSearch, filter, onFilter, loading, onRefresh } = props;
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <div className="relative flex-1 min-w-[220px]">
+        <Search
+          size={14}
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"
+        />
+        <input
+          type="search"
+          placeholder="Buscar email, nome ou role…"
+          value={search}
+          onChange={e => {
+            onSearch(e.target.value);
+          }}
+          className="w-full rounded-md border border-border bg-surface-inset py-1.5 pl-8 pr-3 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
+        />
+      </div>
+      <div className="flex gap-1 text-xs">
+        {(['all', 'admin', 'member', 'sandbox-user', 'viewer'] as Filter[]).map(f => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => {
+              onFilter(f);
+            }}
+            className={
+              'rounded-md px-2.5 py-1 transition-colors ' +
+              (filter === f
+                ? 'bg-brand text-white'
+                : 'bg-surface-elevated text-text-secondary hover:bg-surface-hover hover:text-text-primary')
+            }
+          >
+            {f === 'all' ? 'Todos' : f}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={loading}
+        className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
+      >
+        <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+        Atualizar
+      </button>
     </div>
   );
 }
@@ -287,20 +320,20 @@ function UserRow(props: UserRowProps): ReactElement {
 
   return (
     <>
-      <tr>
+      <tr className="hover:bg-surface-hover">
         <td className="px-3 py-2 align-top">
-          <div className="font-medium">{user.display_name ?? '(sem nome)'}</div>
-          <div className="text-xs text-zinc-500">{user.email ?? '—'}</div>
+          <div className="font-medium text-text-primary">{user.display_name ?? '(sem nome)'}</div>
+          <div className="text-xs text-text-tertiary">{user.email ?? '—'}</div>
         </td>
         <td className="px-3 py-2 align-top">
           <div className="flex flex-wrap gap-1">
             {user.role_slugs.length === 0 ? (
-              <span className="text-xs text-zinc-400">sem role</span>
+              <span className="text-xs text-text-tertiary">sem role</span>
             ) : (
               user.role_slugs.map(slug => (
                 <span
                   key={slug}
-                  className="inline-flex items-center gap-1 rounded bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800"
+                  className="inline-flex items-center gap-1 rounded-md bg-surface-elevated px-2 py-0.5 text-xs text-text-secondary"
                 >
                   {slug}
                   <button
@@ -310,7 +343,7 @@ function UserRow(props: UserRowProps): ReactElement {
                       onRemoveRole(slug);
                     }}
                     title="Remover role"
-                    className="text-zinc-400 hover:text-red-600"
+                    className="text-text-tertiary hover:text-red-400"
                   >
                     ×
                   </button>
@@ -324,32 +357,35 @@ function UserRow(props: UserRowProps): ReactElement {
             {user.permission_slugs.slice(0, 6).map(slug => (
               <span
                 key={slug}
-                className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                className="rounded-md bg-blue-500/15 px-1.5 py-0.5 font-mono text-[10px] text-blue-300"
               >
                 {slug}
               </span>
             ))}
             {user.permission_slugs.length > 6 && (
-              <span className="text-[10px] text-zinc-400">+{user.permission_slugs.length - 6}</span>
+              <span className="text-[10px] text-text-tertiary">
+                +{user.permission_slugs.length - 6}
+              </span>
             )}
           </div>
         </td>
-        <td className="px-3 py-2 align-top text-xs text-zinc-600 dark:text-zinc-400">
+        <td className="px-3 py-2 align-top text-xs text-text-secondary">
           {user.permission_slugs.length} perms
         </td>
         <td className="px-3 py-2 text-right align-top">
           <button
             type="button"
             onClick={onToggle}
-            className="rounded bg-zinc-100 px-2 py-1 text-xs hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2.5 py-1 text-xs text-text-primary hover:bg-surface-hover"
           >
+            {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
             {isOpen ? 'Fechar' : 'Editar'}
           </button>
         </td>
       </tr>
       {isOpen && (
         <tr>
-          <td colSpan={5} className="bg-zinc-50 px-3 py-3 dark:bg-zinc-900">
+          <td colSpan={5} className="bg-surface-inset px-3 py-3">
             <UserEditor
               busy={busy}
               user={user}
@@ -392,11 +428,11 @@ function UserEditor(props: UserEditorProps): ReactElement {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <div>
-        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-text-tertiary">
           Adicionar role
         </div>
         {unassignedRoles.length === 0 ? (
-          <p className="text-xs text-zinc-500">
+          <p className="text-xs text-text-tertiary">
             Todas as roles disponíveis já estão atribuídas (roles de sistema não podem ser
             duplicadas).
           </p>
@@ -410,37 +446,39 @@ function UserEditor(props: UserEditorProps): ReactElement {
                 onClick={() => {
                   onAssignRole(r.slug);
                 }}
-                className="rounded border border-blue-300 bg-white px-2 py-1 text-xs text-blue-700 hover:bg-blue-50 disabled:opacity-50 dark:border-blue-800 dark:bg-zinc-900 dark:text-blue-300"
+                className="rounded-md border border-blue-500/40 bg-surface-elevated px-2 py-1 text-xs text-blue-300 hover:bg-blue-500/15 disabled:opacity-50"
               >
                 + {r.slug}
               </button>
             ))}
           </div>
         )}
-        <div className="mt-3 text-[10px] text-zinc-500">
-          Roles de sistema (admin / member / sandbox-user / viewer) são únicas por usuário e
-          aparecem na lista de roles já atribuídas. Apenas roles customizadas podem ser adicionadas
-          aqui.
+        <div className="mt-3 text-[10px] text-text-tertiary">
+          Roles de sistema (admin / member / sandbox-user / viewer) são únicas por usuário. Apenas
+          roles customizadas podem ser adicionadas aqui.
         </div>
       </div>
       <div>
-        <div className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+        <div className="mb-2 text-[10px] font-medium uppercase tracking-wider text-text-tertiary">
           Permissões diretas (override)
         </div>
-        <p className="mb-2 text-[10px] text-zinc-500">
+        <p className="mb-2 text-[10px] text-text-tertiary">
           Conceda ou revogue uma permissão individualmente. O grant/revoke direto tem prioridade
           sobre o conjunto herdado das roles.
         </p>
-        <div className="max-h-48 space-y-1 overflow-y-auto rounded border border-zinc-200 p-2 dark:border-zinc-800">
+        <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border border-border bg-surface-elevated p-2">
           {allPermissions.map(p => {
             const grantedByRole = isPermissionGrantedByAnyRole(p, rolesBySlug);
             const userHasIt = user.permission_slugs.includes(p.slug);
             return (
-              <div key={p.id} className="flex items-center justify-between gap-2 text-xs">
+              <div
+                key={p.id}
+                className="flex items-center justify-between gap-2 rounded px-1 py-0.5 text-xs hover:bg-surface-hover"
+              >
                 <div className="flex-1 truncate">
-                  <span className="font-mono text-[11px]">{p.slug}</span>
+                  <span className="font-mono text-[11px] text-text-primary">{p.slug}</span>
                   {grantedByRole && (
-                    <span className="ml-2 rounded bg-emerald-50 px-1 text-[10px] text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                    <span className="ml-2 rounded bg-emerald-500/15 px-1 text-[10px] text-emerald-300">
                       via role
                     </span>
                   )}
@@ -453,7 +491,7 @@ function UserEditor(props: UserEditorProps): ReactElement {
                       onClick={() => {
                         onClearOverride(p.slug);
                       }}
-                      className="rounded border border-zinc-300 px-1.5 py-0.5 text-[10px] hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+                      className="rounded-md border border-border px-1.5 py-0.5 text-[10px] text-text-secondary hover:bg-surface-hover disabled:opacity-50"
                     >
                       Limpar override
                     </button>
@@ -465,7 +503,7 @@ function UserEditor(props: UserEditorProps): ReactElement {
                         onClick={() => {
                           onSetOverride(p.slug, true);
                         }}
-                        className="rounded border border-emerald-400 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                        className="rounded-md border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300 hover:bg-emerald-500/25 disabled:opacity-50"
                       >
                         + grant
                       </button>
@@ -475,7 +513,7 @@ function UserEditor(props: UserEditorProps): ReactElement {
                         onClick={() => {
                           onSetOverride(p.slug, false);
                         }}
-                        className="rounded border border-red-400 bg-red-50 px-1.5 py-0.5 text-[10px] text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-700 dark:bg-red-950 dark:text-red-300"
+                        className="rounded-md border border-red-500/40 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 disabled:opacity-50"
                       >
                         − deny
                       </button>
@@ -489,9 +527,4 @@ function UserEditor(props: UserEditorProps): ReactElement {
       </div>
     </div>
   );
-}
-
-function formatHttp(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  return 'Erro';
 }

@@ -15,6 +15,7 @@ import {
   type Permission,
   type RoleWithPermissions,
 } from '../skills/rbac';
+import { RefreshCw, Search } from 'lucide-react';
 
 type Scope = 'all' | 'granted' | 'orphan';
 
@@ -74,21 +75,27 @@ export function RbacPermissionsCatalog(): ReactElement {
   }, [allPermissions, scope, grantedSet, activeCategory, search]);
 
   if (loading && allPermissions.length === 0) {
-    return <p className="text-sm text-zinc-500">Carregando catálogo…</p>;
+    return <p className="text-sm text-text-tertiary">Carregando catálogo…</p>;
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <input
-          type="search"
-          placeholder="Buscar por slug, nome ou descrição…"
-          value={search}
-          onChange={e => {
-            setSearch(e.target.value);
-          }}
-          className="flex-1 min-w-[200px] rounded border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        />
+        <div className="relative flex-1 min-w-[220px]">
+          <Search
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"
+          />
+          <input
+            type="search"
+            placeholder="Buscar por slug, nome ou descrição…"
+            value={search}
+            onChange={e => {
+              setSearch(e.target.value);
+            }}
+            className="w-full rounded-md border border-border bg-surface-inset py-1.5 pl-8 pr-3 text-sm text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
+          />
+        </div>
         <div className="flex gap-1 text-xs">
           {(['all', 'granted', 'orphan'] as Scope[]).map(s => (
             <button
@@ -97,11 +104,12 @@ export function RbacPermissionsCatalog(): ReactElement {
               onClick={() => {
                 setScope(s);
               }}
-              className={`rounded px-2 py-1 ${
-                scope === s
-                  ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
-                  : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-              }`}
+              className={
+                'rounded-md px-2.5 py-1 transition-colors ' +
+                (scope === s
+                  ? 'bg-brand text-white'
+                  : 'bg-surface-elevated text-text-secondary hover:bg-surface-hover hover:text-text-primary')
+              }
             >
               {s === 'all' ? 'Todas' : s === 'granted' ? 'Em uso' : 'Órfãs'}
             </button>
@@ -111,8 +119,9 @@ export function RbacPermissionsCatalog(): ReactElement {
           type="button"
           onClick={() => void refresh()}
           disabled={loading}
-          className="rounded bg-zinc-100 px-3 py-1.5 text-xs hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
         >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           Atualizar
         </button>
       </div>
@@ -123,11 +132,12 @@ export function RbacPermissionsCatalog(): ReactElement {
           onClick={() => {
             setActiveCategory('__all__');
           }}
-          className={`rounded px-2 py-0.5 ${
-            activeCategory === '__all__'
-              ? 'bg-blue-600 text-white'
-              : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-          }`}
+          className={
+            'rounded-md px-2.5 py-0.5 transition-colors ' +
+            (activeCategory === '__all__'
+              ? 'bg-brand text-white'
+              : 'bg-surface-elevated text-text-secondary hover:bg-surface-hover hover:text-text-primary')
+          }
         >
           Todas as categorias
         </button>
@@ -138,11 +148,12 @@ export function RbacPermissionsCatalog(): ReactElement {
             onClick={() => {
               setActiveCategory(cat);
             }}
-            className={`rounded px-2 py-0.5 ${
-              activeCategory === cat
-                ? 'bg-blue-600 text-white'
-                : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-            }`}
+            className={
+              'rounded-md px-2.5 py-0.5 transition-colors ' +
+              (activeCategory === cat
+                ? 'bg-brand text-white'
+                : 'bg-surface-elevated text-text-secondary hover:bg-surface-hover hover:text-text-primary')
+            }
           >
             {cat === '__uncategorized__' ? 'Sem categoria' : cat}
           </button>
@@ -150,12 +161,12 @@ export function RbacPermissionsCatalog(): ReactElement {
       </div>
 
       {error && (
-        <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {error}
         </div>
       )}
 
-      <div className="text-xs text-zinc-500">
+      <div className="text-xs text-text-tertiary">
         {filtered.length} de {allPermissions.length} permissões
         {scope === 'orphan' && ' (não concedidas a nenhuma role)'}
       </div>
@@ -166,36 +177,37 @@ export function RbacPermissionsCatalog(): ReactElement {
           return (
             <div
               key={p.id}
-              className={`rounded border p-3 text-xs ${
-                isGranted
-                  ? 'border-emerald-300 bg-emerald-50/40 dark:border-emerald-800 dark:bg-emerald-950/20'
-                  : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900'
-              }`}
+              className={
+                'rounded-lg border p-3 text-xs ' +
+                (isGranted
+                  ? 'border-emerald-500/30 bg-emerald-500/5'
+                  : 'border-border bg-surface-elevated')
+              }
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="font-mono text-[11px] font-medium">{p.slug}</div>
+                <div className="font-mono text-[11px] font-medium text-text-primary">{p.slug}</div>
                 {isGranted ? (
-                  <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200">
+                  <span className="rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[10px] text-emerald-300">
                     em uso
                   </span>
                 ) : (
-                  <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                  <span className="rounded-md bg-surface-hover px-1.5 py-0.5 text-[10px] text-text-tertiary">
                     órfã
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 text-zinc-600 dark:text-zinc-300">{p.name}</div>
+              <div className="mt-0.5 text-text-secondary">{p.name}</div>
               {p.description && (
-                <div className="mt-1 text-[11px] text-zinc-500">{p.description}</div>
+                <div className="mt-1 text-[11px] text-text-tertiary">{p.description}</div>
               )}
               {p.category && (
-                <div className="mt-1 text-[10px] text-zinc-400">categoria: {p.category}</div>
+                <div className="mt-1 text-[10px] text-text-tertiary">categoria: {p.category}</div>
               )}
             </div>
           );
         })}
         {filtered.length === 0 && (
-          <p className="col-span-full text-center text-xs text-zinc-500">
+          <p className="col-span-full text-center text-xs text-text-tertiary">
             Nenhuma permissão corresponde ao filtro.
           </p>
         )}

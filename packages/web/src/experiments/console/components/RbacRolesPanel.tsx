@@ -23,6 +23,7 @@ import {
   type RoleWithPermissions,
   type Permission,
 } from '../skills/rbac';
+import { RefreshCw, Plus, ChevronDown, ChevronRight, Trash2, Pencil, Save, X } from 'lucide-react';
 
 export function RbacRolesPanel(): ReactElement {
   const [roles, setRoles] = useState<RoleWithPermissions[]>([]);
@@ -133,13 +134,13 @@ export function RbacRolesPanel(): ReactElement {
   );
 
   if (loading && roles.length === 0) {
-    return <p className="text-sm text-zinc-500">Carregando roles…</p>;
+    return <p className="text-sm text-text-tertiary">Carregando roles…</p>;
   }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="text-xs text-zinc-500">
+        <div className="text-xs text-text-tertiary">
           {roles.length} roles ({roles.filter(r => r.is_system).length} de sistema)
         </div>
         <div className="flex gap-2">
@@ -147,8 +148,9 @@ export function RbacRolesPanel(): ReactElement {
             type="button"
             onClick={() => void refresh()}
             disabled={busy || loading}
-            className="rounded bg-zinc-100 px-3 py-1.5 text-xs hover:bg-zinc-200 disabled:opacity-50 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary disabled:opacity-50"
           >
+            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             Atualizar
           </button>
           <button
@@ -156,15 +158,16 @@ export function RbacRolesPanel(): ReactElement {
             onClick={() => {
               setCreating(true);
             }}
-            className="rounded bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700"
+            className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
           >
-            + Nova role
+            <Plus size={12} />
+            Nova role
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+        <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
           {error}
         </div>
       )}
@@ -179,19 +182,19 @@ export function RbacRolesPanel(): ReactElement {
         />
       )}
 
-      <div className="overflow-x-auto rounded border border-zinc-200 dark:border-zinc-800">
-        <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-          <thead className="bg-zinc-50 dark:bg-zinc-900">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full divide-y divide-border text-sm">
+          <thead className="bg-surface-inset">
             <tr>
-              <th className="px-3 py-2 text-left font-medium">Slug</th>
-              <th className="px-3 py-2 text-left font-medium">Nome</th>
-              <th className="px-3 py-2 text-left font-medium">Descrição</th>
-              <th className="px-3 py-2 text-left font-medium">Permissões</th>
-              <th className="px-3 py-2 text-left font-medium">Sistema</th>
-              <th className="px-3 py-2 text-right font-medium">Ações</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Slug</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Nome</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Descrição</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Permissões</th>
+              <th className="px-3 py-2 text-left font-medium text-text-secondary">Sistema</th>
+              <th className="px-3 py-2 text-right font-medium text-text-secondary">Ações</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          <tbody className="divide-y divide-border">
             {roles.map(role => {
               const isOpen = expanded === role.id;
               return (
@@ -238,7 +241,7 @@ function CreateRoleForm(props: CreateRoleFormProps): ReactElement {
   return (
     <form
       onSubmit={submit}
-      className="grid gap-2 rounded border border-blue-300 bg-blue-50/40 p-3 text-sm dark:border-blue-800 dark:bg-blue-950/30 md:grid-cols-3"
+      className="grid gap-2 rounded-lg border border-blue-500/40 bg-blue-500/5 p-3 text-sm md:grid-cols-3"
     >
       <input
         required
@@ -247,7 +250,7 @@ function CreateRoleForm(props: CreateRoleFormProps): ReactElement {
         onChange={e => {
           setSlug(e.target.value);
         }}
-        className="rounded border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+        className="rounded-md border border-border bg-surface-inset px-2 py-1 text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
       />
       <input
         required
@@ -256,7 +259,7 @@ function CreateRoleForm(props: CreateRoleFormProps): ReactElement {
         onChange={e => {
           setName(e.target.value);
         }}
-        className="rounded border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+        className="rounded-md border border-border bg-surface-inset px-2 py-1 text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
       />
       <input
         placeholder="Descrição (opcional)"
@@ -264,20 +267,20 @@ function CreateRoleForm(props: CreateRoleFormProps): ReactElement {
         onChange={e => {
           setDescription(e.target.value);
         }}
-        className="rounded border border-zinc-300 bg-white px-2 py-1 dark:border-zinc-700 dark:bg-zinc-900"
+        className="rounded-md border border-border bg-surface-inset px-2 py-1 text-text-primary placeholder:text-text-tertiary focus:border-border-bright focus:outline-none"
       />
       <div className="md:col-span-3 flex justify-end gap-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded bg-zinc-100 px-3 py-1 text-xs hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+          className="rounded-md border border-border bg-surface-elevated px-3 py-1 text-xs text-text-secondary hover:bg-surface-hover"
         >
           Cancelar
         </button>
         <button
           type="submit"
           disabled={busy || !slug.trim() || !name.trim()}
-          className="rounded bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-md bg-brand px-3 py-1 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
           Criar
         </button>
@@ -315,42 +318,42 @@ function RoleRow(props: RoleRowProps): ReactElement {
 
   return (
     <>
-      <tr>
-        <td className="px-3 py-2 align-top font-mono text-xs">{role.slug}</td>
-        <td className="px-3 py-2 align-top">
+      <tr className="hover:bg-surface-hover">
+        <td className="px-3 py-2 align-top font-mono text-xs text-text-primary">{role.slug}</td>
+        <td className="px-3 py-2 align-top text-text-primary">
           {editing ? (
             <input
               value={name}
               onChange={e => {
                 setName(e.target.value);
               }}
-              className="w-full rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-full rounded-md border border-border bg-surface-inset px-1.5 py-0.5 text-xs text-text-primary focus:border-border-bright focus:outline-none"
             />
           ) : (
             role.name
           )}
         </td>
-        <td className="px-3 py-2 align-top text-xs text-zinc-600 dark:text-zinc-400">
+        <td className="px-3 py-2 align-top text-xs text-text-secondary">
           {editing ? (
             <input
               value={description}
               onChange={e => {
                 setDescription(e.target.value);
               }}
-              className="w-full rounded border border-zinc-300 bg-white px-1.5 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-full rounded-md border border-border bg-surface-inset px-1.5 py-0.5 text-xs text-text-primary focus:border-border-bright focus:outline-none"
             />
           ) : (
-            (role.description ?? <span className="text-zinc-400">—</span>)
+            (role.description ?? <span className="text-text-tertiary">—</span>)
           )}
         </td>
-        <td className="px-3 py-2 align-top text-xs">{role.permission_slugs.length} granted</td>
+        <td className="px-3 py-2 align-top text-xs text-text-secondary">
+          {role.permission_slugs.length} granted
+        </td>
         <td className="px-3 py-2 align-top text-xs">
           {role.is_system ? (
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-              sistema
-            </span>
+            <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-amber-300">sistema</span>
           ) : (
-            <span className="text-zinc-400">custom</span>
+            <span className="text-text-tertiary">custom</span>
           )}
         </td>
         <td className="px-3 py-2 text-right align-top">
@@ -364,16 +367,18 @@ function RoleRow(props: RoleRowProps): ReactElement {
                     setDescription(role.description ?? '');
                     setEditing(false);
                   }}
-                  className="rounded bg-zinc-100 px-2 py-0.5 text-xs hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-secondary hover:bg-surface-hover"
                 >
+                  <X size={11} />
                   Cancelar
                 </button>
                 <button
                   type="button"
                   disabled={busy}
                   onClick={save}
-                  className="rounded bg-blue-600 px-2 py-0.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-md bg-brand px-2 py-0.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50"
                 >
+                  <Save size={11} />
                   Salvar
                 </button>
               </>
@@ -382,8 +387,9 @@ function RoleRow(props: RoleRowProps): ReactElement {
                 <button
                   type="button"
                   onClick={onToggle}
-                  className="rounded bg-zinc-100 px-2 py-0.5 text-xs hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary hover:bg-surface-hover"
                 >
+                  {isOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
                   {isOpen ? 'Fechar' : 'Permissões'}
                 </button>
                 <button
@@ -391,8 +397,9 @@ function RoleRow(props: RoleRowProps): ReactElement {
                   onClick={() => {
                     setEditing(true);
                   }}
-                  className="rounded bg-zinc-100 px-2 py-0.5 text-xs hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700"
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary hover:bg-surface-hover"
                 >
+                  <Pencil size={11} />
                   Editar
                 </button>
                 <button
@@ -400,8 +407,9 @@ function RoleRow(props: RoleRowProps): ReactElement {
                   disabled={busy || role.is_system}
                   onClick={onDelete}
                   title={role.is_system ? 'Roles de sistema são imutáveis' : 'Excluir role'}
-                  className="rounded bg-red-50 px-2 py-0.5 text-xs text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-red-950 dark:text-red-300 dark:hover:bg-red-900"
+                  className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-xs text-red-300 hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
+                  <Trash2 size={11} />
                   Excluir
                 </button>
               </>
@@ -411,7 +419,7 @@ function RoleRow(props: RoleRowProps): ReactElement {
       </tr>
       {isOpen && (
         <tr>
-          <td colSpan={6} className="bg-zinc-50 px-3 py-3 dark:bg-zinc-900">
+          <td colSpan={6} className="bg-surface-inset px-3 py-3">
             <PermissionsMatrix
               busy={busy}
               role={role}
@@ -436,23 +444,23 @@ function PermissionsMatrix(props: PermissionsMatrixProps): ReactElement {
   const { busy, role, permissionsByCategory, onToggle } = props;
   return (
     <div className="space-y-3">
-      <div className="text-xs text-zinc-500">
+      <div className="text-xs text-text-tertiary">
         Marque / desmarque para conceder / revogar a permissão desta role. As alterações são
         aplicadas imediatamente.
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         {Object.entries(permissionsByCategory).map(([category, perms]) => (
-          <div key={category} className="rounded border border-zinc-200 p-2 dark:border-zinc-800">
-            <div className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">
+          <div key={category} className="rounded-md border border-border bg-surface-elevated p-2">
+            <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-text-tertiary">
               {category === '__uncategorized__' ? 'Sem categoria' : category}
             </div>
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {perms.map(p => {
                 const checked = role.permission_slugs.includes(p.slug);
                 return (
                   <label
                     key={p.id}
-                    className="flex cursor-pointer items-start gap-2 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    className="flex cursor-pointer items-start gap-2 rounded px-1 py-0.5 text-xs hover:bg-surface-hover"
                   >
                     <input
                       type="checkbox"
@@ -461,11 +469,11 @@ function PermissionsMatrix(props: PermissionsMatrixProps): ReactElement {
                       onChange={() => {
                         onToggle(p.slug);
                       }}
-                      className="mt-0.5"
+                      className="mt-0.5 accent-brand"
                     />
                     <div className="flex-1">
-                      <div className="font-mono text-[11px]">{p.slug}</div>
-                      <div className="text-zinc-500">{p.name}</div>
+                      <div className="font-mono text-[11px] text-text-primary">{p.slug}</div>
+                      <div className="text-text-tertiary">{p.name}</div>
                     </div>
                   </label>
                 );
