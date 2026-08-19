@@ -87,6 +87,23 @@ function buildAuth(env: NodeJS.ProcessEnv): AuthInstance {
     // request. Set BETTER_AUTH_URL only when behind a proxy with a fixed origin.
     ...(env.BETTER_AUTH_URL ? { baseURL: env.BETTER_AUTH_URL } : {}),
     ...(trustedOrigins.length ? { trustedOrigins } : {}),
+    // Cross-origin cookies for the FORGE webapp (forge.pscode.ia.br +
+    // http://213.199.32.229:5180). Without SameSite=None + Secure, the
+    // browser refuses to send the session cookie on cross-origin XHR.
+    // Better Auth's default is Lax (samesite) which breaks our flow.
+    // We only force this when the deployment exposes the API publicly
+    // (any non-localhost trust origin in the list) — local single-origin
+    // dev keeps the safer default.
+    advanced: {
+      ...(trustedOrigins.some(o => !o.startsWith('http://localhost'))
+        ? {
+            defaultCookieAttributes: {
+              sameSite: 'none',
+              secure: true,
+            },
+          }
+        : {}),
+    },
     // requireEmailVerification defaults false → simple flow, no email sender.
     // disableSignUp closes self-serve registration when the posture is
     // `disabled` (no allowlist + no ARCHON_AUTH_OPEN_SIGNUP=true). The allowlist
