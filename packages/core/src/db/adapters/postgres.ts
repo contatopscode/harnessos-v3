@@ -6,7 +6,6 @@ import type { PoolClient } from 'pg';
 import type { DbNotificationListener, IDatabase, QueryResult, SqlDialect } from './types';
 import { createLogger } from '@archon/paths';
 import { getSchemaSQL } from '../bundled-schema';
-import { seedRbac } from '../rbac-seed';
 
 /**
  * Postgres-only: NOTIFY `archon_dashboard_event` on every workflow_events insert, so
@@ -80,11 +79,13 @@ export class PostgresAdapter implements IDatabase, DbNotificationListener {
       await client.query(sql);
       await client.query('COMMIT');
       getLog().info('db.postgres_schema_init_completed');
-      // RBAC seed runs OUTSIDE the schema-init transaction so a slow
-      // seed never blocks another container's schema apply. The seed
-      // is fully idempotent (ON CONFLICT DO NOTHING) so running it
-      // concurrently is safe — both calls converge to the same state.
-      await seedRbac();
+      // NOTE: RBAC seed is NOT awaited here. The schema apply is the
+      // boot-critical path; a slow or failing seed must not bring the
+      // server down. The seed runs as a fire-and-forget from
+      // connection.ts getDatabase() AFTER the adapter is assigned to
+      // the singleton, and is fully idempotent (ON CONFLICT DO NOTHING
+      // / INSERT OR IGNORE) so a later retry converges. See
+      // packages/core/src/db/connection.ts for the orchestration.
     } catch (e) {
       if (client) {
         try {
