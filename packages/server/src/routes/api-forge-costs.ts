@@ -14,6 +14,9 @@ import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as costsDb from '@archon/core/db/costs';
 import { recordCostBodySchema, type Cost } from '@archon/core/schemas';
+import { createLogger } from '@archon/paths';
+
+const log = createLogger('forge.costs');
 
 type ApiErrorStatus = 400 | 500;
 
@@ -68,8 +71,14 @@ costs.get('/breakdown', async c => {
   const guard = await requireWebPermission(c, 'admin:users');
   if ('error' in guard) return guard.error;
   const windowDays = parseWindowDays(c.req.query('windowDays'));
-  const breakdown = await costsDb.getCostBreakdown(windowDays);
-  return c.json(breakdown);
+  try {
+    const breakdown = await costsDb.getCostBreakdown(windowDays);
+    return c.json(breakdown);
+  } catch (e) {
+    const err = e as Error;
+    log.error({ err, windowDays }, 'cost_breakdown_failed');
+    return apiError(c, 500, 'Failed to get cost breakdown', err.message);
+  }
 });
 
 // POST /api/forge/costs
