@@ -44,7 +44,9 @@ export const createRoleBodySchema = z
       .max(64)
       .regex(/^[a-z0-9][a-z0-9-_]*$/, 'slug must be lowercase alphanum / dash / underscore'),
     name: z.string().min(1).max(128),
-    description: z.string().max(2000).optional(),
+    // nullish: string | null | undefined. The Console UI sends null when the
+    // description field is left empty, so we need to accept it explicitly.
+    description: z.string().max(2000).nullish(),
   })
   .openapi('CreateRoleBody');
 
