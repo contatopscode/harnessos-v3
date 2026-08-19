@@ -260,6 +260,7 @@ import {
 } from '@archon/providers';
 import { messageSchema } from './schemas/conversation.schemas';
 import { adminInvites, publicInvite } from './api.admin-invites';
+import rbac from './api.admin-rbac';
 import {
   getCodebaseGitLog,
   postCodebaseGitRevert,
@@ -1894,6 +1895,10 @@ export function registerApiRoutes(
   // the endpoints; the requireWebAdmin() helper inside the Hono subapp
   // is the real access boundary (session + role='admin' required).
   app.route('/api/admin', adminInvites);
+  // RBAC admin endpoints (users, roles, permissions). Gated by
+  // requireWebPermission('admin:users' | 'admin:roles') inside the
+  // subapp. Mounted BEFORE the API gate for the same reason as adminInvites.
+  app.route('/api/admin', rbac);
 
   // ---- Public invite acceptance ----
   // /api/auth/invite/* is exempted from the API gate via the

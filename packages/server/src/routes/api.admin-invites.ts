@@ -18,7 +18,7 @@
 import { Hono } from 'hono';
 import { randomBytes, createHash } from 'crypto';
 import type { Pool } from 'pg';
-import { getAuth, getAuthPool } from '../auth/instance';
+import { getAuthPool } from '../auth/instance';
 import { isWebAuthEnabled } from '../auth/config';
 import { createLogger } from '@archon/paths';
 
@@ -88,46 +88,17 @@ function authPool(): Pool | null {
 
 /**
  * Require an authenticated web session whose canonical remote_agent_users
- * row has role='admin'. Returns either { userId } or an error response.
+ * row has the `admin:invites` permission (the admin role grants it
+ * transitively via the RBAC seed).
  */
 async function requireWebAdmin(c: {
   req: { raw: { headers: Headers } };
   json: (data: unknown, status?: number) => Response;
 }): Promise<{ userId: string } | { error: Response }> {
-  const auth = getAuth();
-  if (!auth) {
-    return { error: apiError(c, 503, 'Web auth is not enabled on this install') };
-  }
-  let session: { user: { id: string; email?: string; name?: string | null } } | null = null;
-  try {
-    session = await auth.api.getSession({ headers: c.req.raw.headers });
-  } catch (err) {
-    log.error({ err: err as Error }, 'admin.session_resolve_failed');
-    return { error: apiError(c, 503, 'Could not verify session') };
-  }
-  if (!session?.user) {
-    return { error: apiError(c, 401, 'Web authentication required') };
-  }
-  const pool = authPool() as {
-    query: (sql: string, params: unknown[]) => Promise<{ rows: { role: string }[] }>;
-  } | null;
-  if (!pool) {
-    return { error: apiError(c, 503, 'Auth pool unavailable') };
-  }
-  const result = await pool.query(
-    `SELECT u.role
-     FROM remote_agent_users u
-     JOIN remote_agent_user_identities id
-       ON id.user_id = u.id AND id.platform = 'web'
-     WHERE id.platform_user_id = $1
-     LIMIT 1`,
-    [session.user.id]
-  );
-  const role = result.rows[0]?.role;
-  if (role !== 'admin') {
-    return { error: apiError(c, 403, 'Admin role required') };
-  }
-  return { userId: session.user.id };
+  const { requireWebPermission } = await import('../auth/rbac');
+  const guard = await requireWebPermission(c, 'admin:invites');
+  if ('error' in guard) return { error: guard.error };
+  return { userId: guard.userId };
 }
 
 // Typed wrapper around the Better Auth pool so the rest of the file can use
