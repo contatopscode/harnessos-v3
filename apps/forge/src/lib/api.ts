@@ -6,9 +6,13 @@
  * the backend sets `SameSite=None; Secure`). Non-2xx responses throw
  * an `ApiError` so callers can `try/catch` and show a real message
  * (better than bare fetch's generic "Failed to fetch").
+ *
+ * In dev (Vite proxy): VITE_FORGE_API_BASE_URL is empty and we use
+ * relative paths so the proxy forwards to the backend. In prod it's
+ * the HarnessOS origin baked at build time.
  */
 
-const BASE_URL = import.meta.env.VITE_FORGE_API_BASE_URL ?? 'http://localhost:3090';
+const BASE_URL = import.meta.env.VITE_FORGE_API_BASE_URL;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -36,7 +40,9 @@ interface RequestOptions {
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {
-  const url = new URL(path, BASE_URL);
+  // Dev: BASE_URL is empty → relative path so the Vite proxy forwards it.
+  // Prod: BASE_URL is set → absolute URL to the HarnessOS origin.
+  const url = BASE_URL ? new URL(path, BASE_URL) : new URL(path, window.location.origin);
   if (query) {
     for (const [k, v] of Object.entries(query)) {
       if (v !== undefined && v !== '') url.searchParams.set(k, String(v));

@@ -6,9 +6,27 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig(({ mode }) => {
   // Load env from repo root
   const env = loadEnv(mode, path.resolve(__dirname, '../..'), '');
-  // FORGE talks to the HarnessOS backend at this base URL.
-  // In dev: localhost. In prod: forge.pscode.ia.br → harness-os.pscode.ia.br
-  const apiBaseUrl = env.VITE_FORGE_API_BASE_URL ?? 'http://localhost:3090';
+
+  // Two separate URLs:
+  //  - apiBaseUrl  → baked into the client at build time (auth-client + api wrapper)
+  //  - proxyTarget → where the dev server forwards /api to
+  //
+  // Common setups:
+  //  (1) Proxy mode (recommended for local dev): both envs empty.
+  //      The client uses the FORGE's own origin so cookies are
+  //      same-origin HTTP-friendly; the dev server forwards /api to
+  //      `http://localhost:3090` (a local HarnessOS backend).
+  //  (2) Dev with prod backend: leave VITE_FORGE_API_BASE_URL empty
+  //      and set VITE_FORGE_PROXY_TARGET=https://harness-os.pscode.ia.br
+  //      so the client uses the FORGE origin and the proxy reaches
+  //      the prod backend (cookies are same-origin in the browser).
+  //  (3) Real cross-origin (used in prod build): set
+  //      VITE_FORGE_API_BASE_URL=https://harness-os.pscode.ia.br at
+  //      build time. The client talks to the backend directly with
+  //      SameSite=None; Secure cookies.
+
+  const apiBaseUrl = env.VITE_FORGE_API_BASE_URL ?? '';
+  const proxyTarget = env.VITE_FORGE_PROXY_TARGET ?? 'http://localhost:3090';
 
   return {
     plugins: [react(), tailwindcss()],
@@ -25,11 +43,8 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       host: '127.0.0.1',
       proxy: {
-        // Proxy /api to the HarnessOS backend so cookies/auth work
-        // (vite preserves the Host header so the backend sees the
-        // FORGE origin and the Better Auth cookie is sent cross-origin)
         '/api': {
-          target: apiBaseUrl,
+          target: proxyTarget,
           changeOrigin: true,
           secure: false,
         },
