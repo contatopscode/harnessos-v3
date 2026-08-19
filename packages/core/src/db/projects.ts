@@ -12,6 +12,7 @@ import { pool } from './connection';
 
 export interface ProjectSummaryRow {
   id: string;
+  /** Derived from codebases.name (no `slug` column exists in codebases). */
   slug: string;
   name: string;
   client_id: string | null;
@@ -25,10 +26,16 @@ export interface ProjectSummaryRow {
 }
 
 function toProject(row: Record<string, unknown>): ProjectSummaryRow {
+  const name = str(row.name);
   return {
     id: str(row.id),
-    slug: str(row.slug),
-    name: str(row.name),
+    // codebases has no `slug` column — synthesize one from the owner/repo name
+    // so URLs like /forge/projects/contatopscode-facegate still read nicely.
+    slug: name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, ''),
+    name,
     client_id: nullableStr(row.client_id),
     client_name: nullableStr(row.client_name),
     status: str(row.status) || 'active',
@@ -67,14 +74,16 @@ function intOrZero(value: unknown): number {
 export async function listProjectsWithCounts(): Promise<ProjectSummaryRow[]> {
   // Subqueries are simpler than LEFT JOIN GROUP BY for an MVP —
   // codebases are a few hundred at most, this is fine.
+  // NOTE: codebases has no `slug` column — `name` is the human-facing
+  // identifier (usually `owner/repo`). We synthesize a URL-safe `slug`
+  // in `toProject` for FORGE UI use.
   const result = await pool.query<Record<string, unknown>>(
     `SELECT
        cb.id,
-       cb.slug,
        cb.name,
        cb.client_id,
        c.name AS client_name,
-       cb.status,
+       cb.kind AS status,
        cb.default_branch,
        cb.repository_url,
        (SELECT COUNT(*) FROM remote_agent_demands d
@@ -95,11 +104,10 @@ export async function getProjectById(id: string): Promise<ProjectSummaryRow | nu
   const result = await pool.query<Record<string, unknown>>(
     `SELECT
        cb.id,
-       cb.slug,
        cb.name,
        cb.client_id,
        c.name AS client_name,
-       cb.status,
+       cb.kind AS status,
        cb.default_branch,
        cb.repository_url,
        (SELECT COUNT(*) FROM remote_agent_demands d
