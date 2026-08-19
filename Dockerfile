@@ -28,6 +28,10 @@ COPY packages/providers/package.json ./packages/providers/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 COPY packages/workflows/package.json ./packages/workflows/
+# apps/forge is a workspace member of this monorepo. Its package.json must
+# be present in the build context so Bun's workspace lockfile resolution
+# succeeds (the lockfile references @archon/forge@workspace:apps/forge).
+COPY apps/forge/package.json ./apps/forge/
 
 # Install ALL dependencies (including devDependencies needed for web build)
 # --linker=hoisted: Bun's default "isolated" linker stores packages in
