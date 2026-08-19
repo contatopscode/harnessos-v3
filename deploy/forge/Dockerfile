@@ -21,7 +21,6 @@ WORKDIR /repo
 COPY package.json bun.lock ./
 COPY packages ./packages
 COPY apps/forge ./apps/forge
-COPY scripts ./scripts 2>/dev/null || true
 
 ARG VITE_FORGE_API_BASE_URL
 ENV VITE_FORGE_API_BASE_URL=${VITE_FORGE_API_BASE_URL}
@@ -37,6 +36,6 @@ ENV PORT=5180
 ENV HOSTNAME=0.0.0.0
 EXPOSE 5180
 
-# Bun's entrypoint runs server.ts directly. We pre-check the dist exists so
-# a stale image fails loudly instead of serving a 404 forever.
+# Pre-check the dist exists so a stale image fails loudly instead of serving
+# 404 forever. Bun runs the server.ts directly.
 CMD ["sh", "-c", "test -d /app/dist && exec bun run /app/server.ts"]
