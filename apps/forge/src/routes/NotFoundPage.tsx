@@ -1,7 +1,8 @@
+import type { JSX } from 'react';
 import { Link } from 'react-router';
 import { Compass } from 'lucide-react';
 
-export function NotFoundPage() {
+export function NotFoundPage(): JSX.Element {
   return (
     <div className="flex h-64 flex-col items-center justify-center text-center">
       <Compass className="mb-3 h-8 w-8 text-[var(--text-tertiary)]" />

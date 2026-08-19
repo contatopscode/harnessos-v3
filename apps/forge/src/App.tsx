@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
 import { AppShell } from './components/AppShell';
 import { LoginPage } from './routes/LoginPage';
@@ -12,7 +13,7 @@ import { TracesPage } from './routes/TracesPage';
 import { ChatPage } from './routes/ChatPage';
 import { NotFoundPage } from './routes/NotFoundPage';
 
-export function App() {
+export function App(): JSX.Element {
   return (
     <BrowserRouter>
       <Routes>

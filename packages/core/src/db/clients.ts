@@ -125,3 +125,36 @@ export async function updateClient(
   );
   return result.rows[0] ? toClient(result.rows[0]) : null;
 }
+
+/**
+ * Hard-delete a client. Refuses (returns 0) if any codebase or demand
+ * still references it — the caller must reparent or delete those first.
+ * This is a safety net so `forge/clients/:id DELETE` doesn't accidentally
+ * orphan projects.
+ */
+export async function deleteClient(id: string): Promise<{ deleted: boolean; reason?: string }> {
+  const inUse = await pool.query<{ count: string }>(
+    `SELECT (
+       (SELECT COUNT(*) FROM remote_agent_codebases WHERE client_id = $1)
+       +
+       (SELECT COUNT(*) FROM remote_agent_demands WHERE client_id = $1)
+     )::text AS count`,
+    [id]
+  );
+  if (Number(inUse.rows[0]?.count ?? 0) > 0) {
+    return {
+      deleted: false,
+      reason:
+        'Cliente ainda tem projetos ou demandas vinculados. Remova-os antes de excluir o cliente.',
+    };
+  }
+  const result = await pool.query<Record<string, unknown>>(
+    'DELETE FROM remote_agent_clients WHERE id = $1 RETURNING id',
+    [id]
+  );
+  if (result.rows[0]) {
+    log.info({ clientId: id }, 'client.deleted');
+    return { deleted: true };
+  }
+  return { deleted: false, reason: 'Cliente não encontrado' };
+}

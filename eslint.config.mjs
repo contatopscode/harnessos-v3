@@ -26,6 +26,8 @@ export default tseslint.config(
       '*.d.ts', // Root-level declaration files (not in tsconfig project scope)
       '**/*.generated.d.ts', // Auto-generated declaration files (e.g. openapi-typescript output)
       'packages/web/vite.config.ts', // Vite config doesn't need type-checked linting
+      'apps/*/vite.config.ts', // Vite configs in monorepo apps don't need type-checked linting
+      'deploy/**/*.ts', // Deploy server scripts (Bun.serve) — outside tsconfig project scope
       'packages/web/components.json',
       'packages/web/src/components/ui/**', // shadcn/ui auto-generated components
       'packages/web/src/lib/utils.ts', // shadcn/ui utility file
@@ -43,7 +45,7 @@ export default tseslint.config(
 
   // Project-specific settings
   {
-    files: ['packages/*/src/**/*.{ts,tsx}', 'scripts/**/*.ts'],
+    files: ['packages/*/src/**/*.{ts,tsx}', 'apps/*/src/**/*.{ts,tsx}', 'scripts/**/*.ts'],
     languageOptions: {
       parserOptions: {
         projectService: true,

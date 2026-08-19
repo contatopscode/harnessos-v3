@@ -78,8 +78,8 @@ export function InstallSkillsDialog({
           </h2>
           <p className="mt-1 text-[13px] text-text-tertiary">
             Os skills <code>archon</code> e <code>manage-run</code> serão gravados em{' '}
-            <code className="font-mono">{project.path}</code> para que Claude Code e Codex
-            carreguem na próxima sessão.
+            <code className="font-mono">{project.path}</code> para que Claude Code e Codex carreguem
+            na próxima sessão.
           </p>
         </header>
 

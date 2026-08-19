@@ -9,6 +9,16 @@
  * Open demands = status NOT IN ('concluido', 'cancelado').
  */
 import { pool } from './connection';
+import { createLogger } from '@archon/paths';
+
+const log = createLogger('db.projects');
+
+export interface ProjectPatch {
+  client_id?: string | null;
+  default_branch?: string | null;
+  repository_url?: string | null;
+  kind?: 'repo' | 'folder';
+}
 
 export interface ProjectSummaryRow {
   id: string;
@@ -123,4 +133,69 @@ export async function getProjectById(id: string): Promise<ProjectSummaryRow | nu
     [id]
   );
   return result.rows[0] ? toProject(result.rows[0]) : null;
+}
+
+export async function updateProject(
+  id: string,
+  patch: ProjectPatch
+): Promise<ProjectSummaryRow | null> {
+  const fields: string[] = [];
+  const values: (string | null)[] = [];
+  let i = 1;
+  if (patch.client_id !== undefined) {
+    fields.push(`client_id = $${String(i++)}`);
+    values.push(patch.client_id);
+  }
+  if (patch.default_branch !== undefined) {
+    fields.push(`default_branch = $${String(i++)}`);
+    values.push(patch.default_branch);
+  }
+  if (patch.repository_url !== undefined) {
+    fields.push(`repository_url = $${String(i++)}`);
+    values.push(patch.repository_url);
+  }
+  if (patch.kind !== undefined) {
+    fields.push(`kind = $${String(i++)}`);
+    values.push(patch.kind);
+  }
+  if (fields.length === 0) return getProjectById(id);
+  values.push(id);
+  await pool.query(
+    `UPDATE remote_agent_codebases SET ${fields.join(', ')} WHERE id = $${String(i)}`,
+    values
+  );
+  log.info({ projectId: id, fields: Object.keys(patch) }, 'project.updated');
+  return getProjectById(id);
+}
+
+/**
+ * Hard-delete a project (codebase). Refuses (returns 0) if any demand
+ * or workflow run still references it — same safety net as
+ * `deleteClient` so the FORGE app can't accidentally orphan rows.
+ */
+export async function deleteProject(id: string): Promise<{ deleted: boolean; reason?: string }> {
+  const inUse = await pool.query<{ count: string }>(
+    `SELECT (
+       (SELECT COUNT(*) FROM remote_agent_demands WHERE codebase_id = $1)
+       +
+       (SELECT COUNT(*) FROM remote_agent_workflow_runs WHERE codebase_id = $1)
+     )::text AS count`,
+    [id]
+  );
+  if (Number(inUse.rows[0]?.count ?? 0) > 0) {
+    return {
+      deleted: false,
+      reason:
+        'Projeto ainda tem demandas ou runs vinculados. Remova-os antes de excluir o projeto.',
+    };
+  }
+  const result = await pool.query<Record<string, unknown>>(
+    'DELETE FROM remote_agent_codebases WHERE id = $1 RETURNING id',
+    [id]
+  );
+  if (result.rows[0]) {
+    log.info({ projectId: id }, 'project.deleted');
+    return { deleted: true };
+  }
+  return { deleted: false, reason: 'Projeto não encontrado' };
 }

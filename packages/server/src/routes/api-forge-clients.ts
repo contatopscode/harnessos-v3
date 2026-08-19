@@ -88,4 +88,20 @@ clients.patch('/:id', async c => {
   return c.json({ client: updated });
 });
 
+// DELETE /api/forge/clients/:id — refuses if the client still owns
+// codebases or demands (safer than cascading through 100s of rows).
+clients.delete('/:id', async c => {
+  const guard = await requireWebPermission(c, 'admin:users');
+  if ('error' in guard) return guard.error;
+  const id = c.req.param('id');
+  const result = await clientsDb.deleteClient(id);
+  if (!result.deleted) {
+    return c.json(
+      { error: result.reason ?? 'Não foi possível remover o cliente' },
+      result.reason?.includes('não encontrado') ? 404 : 409
+    );
+  }
+  return c.json({ ok: true });
+});
+
 export default clients;

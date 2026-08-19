@@ -85,6 +85,7 @@ export async function listDemands(filter?: {
   codebaseId?: string;
   status?: DemandStatus;
   search?: string;
+  limit?: number;
 }): Promise<DemandRow[]> {
   const where: string[] = [];
   const values: unknown[] = [];
@@ -107,8 +108,12 @@ export async function listDemands(filter?: {
     i++;
   }
   const whereClause = where.length === 0 ? '' : `WHERE ${where.join(' AND ')}`;
+  const limitClause = filter?.limit ? `LIMIT $${String(i++)}` : '';
+  if (filter?.limit) {
+    values.push(filter.limit);
+  }
   const result = await pool.query<Record<string, unknown>>(
-    `SELECT * FROM remote_agent_demands ${whereClause} ORDER BY priority DESC, created_at DESC`,
+    `SELECT * FROM remote_agent_demands ${whereClause} ORDER BY priority DESC, created_at DESC ${limitClause}`,
     values
   );
   return result.rows.map(toDemand);

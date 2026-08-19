@@ -16,7 +16,7 @@ import { createLogger } from '@archon/paths';
 
 const log = createLogger('forge.projects');
 
-type ApiErrorStatus = 404 | 500;
+type ApiErrorStatus = 400 | 404 | 409 | 500;
 
 function apiError(
   c: { json: (data: unknown, status?: number) => Response },
@@ -57,6 +57,51 @@ projects.get('/:id', async c => {
     log.error({ err, id }, 'get_project_failed');
     return apiError(c, 500, 'Failed to get project', err.message);
   }
+});
+
+// PATCH /api/forge/projects/:id — edit client_id, default_branch,
+// repository_url, or kind. Does NOT touch codebases.name (that is
+// the identity of the project and editing it would orphan workflows).
+projects.patch('/:id', async c => {
+  const guard = await requireWebPermission(c, 'admin:users');
+  if ('error' in guard) return guard.error;
+  const id = c.req.param('id');
+  const body = (await c.req.json().catch(() => null)) as {
+    client_id?: string | null;
+    default_branch?: string | null;
+    repository_url?: string | null;
+    kind?: 'repo' | 'folder';
+  } | null;
+  if (!body) return apiError(c, 400, 'Body required');
+  try {
+    const updated = await projectsDb.updateProject(id, {
+      client_id: body.client_id,
+      default_branch: body.default_branch,
+      repository_url: body.repository_url,
+      kind: body.kind,
+    });
+    if (!updated) return apiError(c, 404, 'Project not found');
+    return c.json({ project: updated satisfies ProjectSummary });
+  } catch (e) {
+    const err = e as Error;
+    log.error({ err, id }, 'update_project_failed');
+    return apiError(c, 500, 'Failed to update project', err.message);
+  }
+});
+
+// DELETE /api/forge/projects/:id — refuses if demands or runs exist.
+projects.delete('/:id', async c => {
+  const guard = await requireWebPermission(c, 'admin:users');
+  if ('error' in guard) return guard.error;
+  const id = c.req.param('id');
+  const result = await projectsDb.deleteProject(id);
+  if (!result.deleted) {
+    return c.json(
+      { error: result.reason ?? 'Não foi possível remover o projeto' },
+      result.reason?.includes('não encontrado') ? 404 : 409
+    );
+  }
+  return c.json({ ok: true });
 });
 
 export default projects;

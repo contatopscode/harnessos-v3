@@ -148,7 +148,7 @@ export interface Demand {
 }
 
 export interface DemandBoard {
-  columns: Array<{ status: DemandStatus; demands: Demand[] }>;
+  columns: { status: DemandStatus; demands: Demand[] }[];
   total: number;
 }
 
@@ -211,30 +211,30 @@ export interface CostSummary {
 }
 
 export interface CostBreakdown {
-  by_model: Array<{
+  by_model: {
     key: string;
     amount_usd: number;
     amount_brl: number;
     tokens_in: number;
     tokens_out: number;
     cost_rows_count: number;
-  }>;
-  by_codebase: Array<{
+  }[];
+  by_codebase: {
     key: string;
     amount_usd: number;
     amount_brl: number;
     tokens_in: number;
     tokens_out: number;
     cost_rows_count: number;
-  }>;
-  by_pipeline: Array<{
+  }[];
+  by_pipeline: {
     key: string;
     amount_usd: number;
     amount_brl: number;
     tokens_in: number;
     tokens_out: number;
     cost_rows_count: number;
-  }>;
+  }[];
   window_days: number;
 }
 
@@ -252,21 +252,56 @@ export interface ProjectSummary {
   repository_url: string | null;
 }
 
+export type AgentRunStatus =
+  | 'queued'
+  | 'running'
+  | 'awaiting_approval'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export interface AgentRun {
+  id: string;
+  codebase_id: string | null;
+  conversation_id: string | null;
+  workflow_name: string | null;
+  status: AgentRunStatus;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  prompt_preview: string | null;
+  error: string | null;
+}
+
+export interface ChatContext {
+  projects_count: number;
+  clients_count: number;
+  demands_count: number;
+}
+
+export interface ChatReply {
+  reply: string;
+  model: string;
+  latency_ms: number;
+  context: ChatContext;
+}
+
 // =========================================================================
 // Domain wrappers
 // =========================================================================
 
+// Each method returns Promise<T> — the explicit-function-return-type
+// rule is too noisy for a flat method table; we let TS infer the
+// generic return through the wrapper.
+/* eslint-disable @typescript-eslint/explicit-function-return-type */
 export const api = {
   clients: {
-    list: (signal?: AbortSignal) => request<{ clients: Client[] }>('/api/forge/clients', { signal }),
+    list: (signal?: AbortSignal) =>
+      request<{ clients: Client[] }>('/api/forge/clients', { signal }),
     get: (id: string, signal?: AbortSignal) =>
       request<{ client: Client }>(`/api/forge/clients/${id}`, { signal }),
-    create: (body: {
-      slug: string;
-      name: string;
-      description?: string;
-      contact_email?: string;
-    }) => request<{ client: Client }>('/api/forge/clients', { method: 'POST', body }),
+    create: (body: { slug: string; name: string; description?: string; contact_email?: string }) =>
+      request<{ client: Client }>('/api/forge/clients', { method: 'POST', body }),
     update: (
       id: string,
       body: {
@@ -276,6 +311,7 @@ export const api = {
         status?: ClientStatus;
       }
     ) => request<{ client: Client }>(`/api/forge/clients/${id}`, { method: 'PATCH', body }),
+    delete: (id: string) => request<{ ok: true }>(`/api/forge/clients/${id}`, { method: 'DELETE' }),
   },
   demands: {
     list: (filter?: {
@@ -283,8 +319,7 @@ export const api = {
       codebaseId?: string;
       status?: DemandStatus;
       search?: string;
-    }) =>
-      request<{ demands: Demand[] }>('/api/forge/demands', { query: filter }),
+    }) => request<{ demands: Demand[] }>('/api/forge/demands', { query: filter }),
     board: (filter?: { clientId?: string; codebaseId?: string; search?: string }) =>
       request<DemandBoard>('/api/forge/demands/board', { query: filter }),
     get: (id: string) => request<{ demand: Demand }>(`/api/forge/demands/${id}`),
@@ -384,5 +419,28 @@ export const api = {
   projects: {
     list: () => request<{ projects: ProjectSummary[] }>('/api/forge/projects'),
     get: (id: string) => request<{ project: ProjectSummary }>(`/api/forge/projects/${id}`),
+    update: (
+      id: string,
+      body: {
+        client_id?: string | null;
+        default_branch?: string | null;
+        repository_url?: string | null;
+        kind?: 'repo' | 'folder';
+      }
+    ) =>
+      request<{ project: ProjectSummary }>(`/api/forge/projects/${id}`, {
+        method: 'PATCH',
+        body,
+      }),
+    delete: (id: string) =>
+      request<{ ok: true }>(`/api/forge/projects/${id}`, { method: 'DELETE' }),
+  },
+  runs: {
+    list: (filter?: { codebaseId?: string; status?: string; limit?: number }) =>
+      request<{ runs: AgentRun[] }>('/api/forge/runs', { query: filter }),
+  },
+  chat: {
+    ask: (body: { message: string; codebase_id?: string; conversation_id?: string }) =>
+      request<ChatReply>('/api/forge/chat', { method: 'POST', body }),
   },
 };

@@ -267,6 +267,7 @@ import forgeSprints from './api-forge-sprints';
 import forgeOss from './api-forge-oss';
 import forgeCosts from './api-forge-costs';
 import forgeProjects from './api-forge-projects';
+import forgeChat from './api-forge-chat';
 import {
   getCodebaseGitLog,
   postCodebaseGitRevert,
@@ -1917,6 +1918,7 @@ export function registerApiRoutes(
   app.route('/api/forge/oss', forgeOss);
   app.route('/api/forge/costs', forgeCosts);
   app.route('/api/forge/projects', forgeProjects);
+  app.route('/api/forge/chat', forgeChat);
 
   // ---- Public invite acceptance ----
   // /api/auth/invite/* is exempted from the API gate via the

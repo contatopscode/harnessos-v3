@@ -2,9 +2,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Demand, type DemandStatus, ApiError } from '../lib/api';
 import { Loader2, Plus, Search } from 'lucide-react';
 import { useState } from 'react';
+import type { JSX } from 'react';
 import { cn } from '../lib/cn';
 
-const COLUMNS: Array<{ status: DemandStatus; label: string; accent: string }> = [
+const COLUMNS: { status: DemandStatus; label: string; accent: string }[] = [
   { status: 'backlog', label: 'Backlog', accent: 'var(--text-tertiary)' },
   { status: 'triagem', label: 'Triagem / Análise', accent: 'var(--running)' },
   { status: 'requisitos', label: 'Requisitos', accent: 'var(--brand-violet)' },
@@ -14,7 +15,7 @@ const COLUMNS: Array<{ status: DemandStatus; label: string; accent: string }> = 
   { status: 'cancelado', label: 'Cancelado', accent: 'var(--text-tertiary)' },
 ];
 
-export function DemandasPage() {
+export function DemandasPage(): JSX.Element {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
 
@@ -47,7 +48,9 @@ export function DemandasPage() {
               type="search"
               placeholder="Buscar slug, título…"
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={e => {
+                setSearch(e.target.value);
+              }}
               className="w-[260px] rounded-md border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-8 pr-3 text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-magenta)] focus:outline-none"
             />
           </div>
@@ -67,7 +70,7 @@ export function DemandasPage() {
           <span className="text-[13px]">Carregando board…</span>
         </div>
       ) : error ? (
-        <ErrorState error={error as Error} />
+        <ErrorState error={error} />
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
           {data?.columns.map(col => (
@@ -77,7 +80,9 @@ export function DemandasPage() {
               label={COLUMNS.find(c => c.status === col.status)?.label ?? col.status}
               accent={COLUMNS.find(c => c.status === col.status)?.accent ?? 'var(--text-tertiary)'}
               demands={col.demands}
-              onMove={(id, status) => moveStatus.mutate({ id, status })}
+              onMove={(id, status) => {
+                moveStatus.mutate({ id, status });
+              }}
             />
           ))}
         </div>
@@ -94,16 +99,12 @@ interface ColumnProps {
   onMove: (id: string, status: DemandStatus) => void;
 }
 
-function Column({ label, accent, demands, onMove }: ColumnProps) {
+function Column({ label, accent, demands, onMove }: ColumnProps): JSX.Element {
   return (
     <div className="flex min-h-[120px] flex-col rounded-[10px] bg-[var(--surface-inset)]/60 p-2">
       <div className="mb-2 flex items-center justify-between px-1.5">
         <div className="flex items-center gap-1.5">
-          <span
-            className="h-1.5 w-1.5 rounded-full"
-            style={{ background: accent }}
-            aria-hidden
-          />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: accent }} aria-hidden />
           <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
             {label}
           </span>
@@ -130,7 +131,7 @@ interface CardProps {
   onMove: (id: string, status: DemandStatus) => void;
 }
 
-function Card({ demand, onMove }: CardProps) {
+function Card({ demand, onMove }: CardProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const priorityColor =
     demand.priority === 'urgente'
@@ -140,7 +141,9 @@ function Card({ demand, onMove }: CardProps) {
         : 'var(--text-tertiary)';
   return (
     <div
-      onClick={() => setOpen(o => !o)}
+      onClick={() => {
+        setOpen(o => !o);
+      }}
       className={cn(
         'group cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] p-2.5 transition hover:border-[var(--border-bright)] hover:bg-[var(--surface-elevated)]',
         open && 'ring-1 ring-[var(--accent-ring)]'
@@ -183,16 +186,14 @@ function Card({ demand, onMove }: CardProps) {
   );
 }
 
-function ErrorState({ error }: { error: Error }) {
+function ErrorState({ error }: { error: Error }): JSX.Element {
   const isApiError = error instanceof ApiError;
   return (
     <div className="rounded-[12px] border border-[var(--error)]/40 bg-[var(--error-soft)] p-5">
       <div className="text-[13px] font-semibold text-[var(--error)]">
         {isApiError ? `Erro ${String(error.status)}` : 'Erro inesperado'}
       </div>
-      <div className="mt-1 text-[12px] text-[var(--text-secondary)]">
-        {error.message}
-      </div>
+      <div className="mt-1 text-[12px] text-[var(--text-secondary)]">{error.message}</div>
     </div>
   );
 }

@@ -1,17 +1,6 @@
+import type { JSX } from 'react';
 import { NavLink } from 'react-router';
-import {
-  Users,
-  FolderKanban,
-  Trello,
-  Workflow,
-  Bot,
-  Sparkles,
-  Receipt,
-  Activity,
-  MessageSquare,
-  LogOut,
-  Flame,
-} from 'lucide-react';
+import { Users, FolderKanban, Trello, Receipt, MessageSquare, LogOut, Flame } from 'lucide-react';
 import { useSession, signOut } from '../lib/auth-client';
 import { cn } from '../lib/cn';
 
@@ -25,11 +14,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/projetos', label: 'Projetos', icon: FolderKanban },
   { to: '/demandas', label: 'Demandas', icon: Trello },
-  { to: '/pipelines', label: 'Pipelines', icon: Workflow },
-  { to: '/subagents', label: 'SubAgents', icon: Bot },
-  { to: '/skills', label: 'Skills', icon: Sparkles },
   { to: '/custos', label: 'Custos', icon: Receipt },
-  { to: '/traces', label: 'Traces', icon: Activity },
   { to: '/chat', label: 'Chat', icon: MessageSquare },
 ];
 
@@ -37,7 +22,7 @@ interface SidebarProps {
   currentPath: string;
 }
 
-export function Sidebar({ currentPath: _currentPath }: SidebarProps) {
+export function Sidebar({ currentPath: _currentPath }: SidebarProps): JSX.Element {
   const { data: session } = useSession();
 
   const userName = (session?.user as { name?: string } | undefined)?.name ?? '—';
@@ -58,15 +43,17 @@ export function Sidebar({ currentPath: _currentPath }: SidebarProps) {
         </div>
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-tertiary)]">
-            VOLUND
+            HarnessOS
           </div>
-          <div className="text-sm font-semibold text-[var(--text-primary)]">FORGE</div>
+          <div className="text-sm font-semibold text-[var(--text-primary)]">Projetos</div>
         </div>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-2 pt-2">
         {NAV_ITEMS.map(item => {
+          // PascalCase required for React component usage
+          // eslint-disable-next-line @typescript-eslint/naming-convention
           const Icon = item.icon;
           return (
             <NavLink
@@ -94,9 +81,7 @@ export function Sidebar({ currentPath: _currentPath }: SidebarProps) {
           <div className="truncate text-[12px] font-medium text-[var(--text-primary)]">
             {userName}
           </div>
-          <div className="truncate text-[10.5px] text-[var(--text-tertiary)]">
-            {userEmail}
-          </div>
+          <div className="truncate text-[10.5px] text-[var(--text-tertiary)]">{userEmail}</div>
         </div>
         <button
           type="button"

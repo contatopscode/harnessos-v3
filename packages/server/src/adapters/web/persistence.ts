@@ -238,7 +238,10 @@ export class MessagePersistence {
           dbId = conv.id;
           getLog().debug({ conversationId, dbId: conv.id }, 'persistence_lazy_lookup_resolved');
         } else {
-          getLog().warn({ conversationId, segmentCount: ready.length }, 'assistant_persist_no_db_id');
+          getLog().warn(
+            { conversationId, segmentCount: ready.length },
+            'assistant_persist_no_db_id'
+          );
         }
       } catch (lookupErr: unknown) {
         getLog().warn({ conversationId, err: lookupErr }, 'persistence_lazy_lookup_failed');

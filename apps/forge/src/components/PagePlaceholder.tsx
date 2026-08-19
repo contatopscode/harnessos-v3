@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { Construction } from 'lucide-react';
 
 interface PagePlaceholderProps {
@@ -12,7 +13,11 @@ interface PagePlaceholderProps {
  * end-to-end; subsequent PRs replace each placeholder with the real
  * implementation.
  */
-export function PagePlaceholder({ title, description, bullets = [] }: PagePlaceholderProps) {
+export function PagePlaceholder({
+  title,
+  description,
+  bullets = [],
+}: PagePlaceholderProps): JSX.Element {
   return (
     <div className="max-w-[760px]">
       <div className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1 text-[10.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">

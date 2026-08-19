@@ -52,7 +52,7 @@ export async function buildMemoryPromptSection(
   } = {}
 ): Promise<string> {
   const { conversationId, agentSlug, codebaseId, limit = 5 } = options;
-  const scopes: Array<{ scope: MemoryScope; scopeId?: string | null }> = [
+  const scopes: { scope: MemoryScope; scopeId?: string | null }[] = [
     { scope: 'user', scopeId: null },
   ];
   if (agentSlug) scopes.push({ scope: 'agent', scopeId: agentSlug });
@@ -79,7 +79,8 @@ export async function buildMemoryPromptSection(
     '',
   ];
   for (const m of memories) {
-    const sourceTag = m.source === 'chat' ? ' [user said]' : m.source === 'manual' ? ' [manual]' : '';
+    const sourceTag =
+      m.source === 'chat' ? ' [user said]' : m.source === 'manual' ? ' [manual]' : '';
     lines.push(`- ${m.content}${sourceTag}`);
   }
   return lines.join('\n');
@@ -100,11 +101,21 @@ export async function buildMemoryPromptSection(
  * (the user explicitly says NOT to remember). And it matches how people
  * actually write memory instructions in practice.
  */
-const PT_BR_SIGNALS: Array<{ pattern: RegExp; kind: MemoryKind | null }> = [
+const PT_BR_SIGNALS: { pattern: RegExp; kind: MemoryKind | null }[] = [
   { pattern: /^\s*(?:por\s+favor[,\s]+)?lembr[ae]\s+(?:que\s+)?(?:de\s+que\s+)?/i, kind: 'note' },
-  { pattern: /^\s*(?:por\s+favor[,\s]+)?lembr[ae]\s+como\s+(preferência|preferencia|fato|contexto|feedback|nota)\s*:\s*/i, kind: null },
-  { pattern: /^\s*(?:por\s+favor[,\s]+)?nunca\s+esque(cer|ça|ca)\s+(?:que\s+)?/i, kind: 'preference' },
-  { pattern: /^\s*(?:por\s+favor[,\s]+)?sempre\s+(?:lembr[ae]|esque)\s+(?:que\s+)?/i, kind: 'preference' },
+  {
+    pattern:
+      /^\s*(?:por\s+favor[,\s]+)?lembr[ae]\s+como\s+(preferência|preferencia|fato|contexto|feedback|nota)\s*:\s*/i,
+    kind: null,
+  },
+  {
+    pattern: /^\s*(?:por\s+favor[,\s]+)?nunca\s+esque(cer|ça|ca)\s+(?:que\s+)?/i,
+    kind: 'preference',
+  },
+  {
+    pattern: /^\s*(?:por\s+favor[,\s]+)?sempre\s+(?:lembr[ae]|esque)\s+(?:que\s+)?/i,
+    kind: 'preference',
+  },
   // Accept "preferência é/são:" (with or without trailing space) and bare ":"
   { pattern: /^\s*(?:minha|minhas)\s+preferência\s+(?:é|são|:)[:\s]+/i, kind: 'preference' },
   { pattern: /^\s*meu\s+setup\s+(?:é|são|:)[:\s]+/i, kind: 'preference' },
@@ -112,9 +123,13 @@ const PT_BR_SIGNALS: Array<{ pattern: RegExp; kind: MemoryKind | null }> = [
   { pattern: /^\s*nota\s+(?:importante\s*)?:\s*/i, kind: 'note' },
 ];
 
-const EN_SIGNALS: Array<{ pattern: RegExp; kind: MemoryKind | null }> = [
+const EN_SIGNALS: { pattern: RegExp; kind: MemoryKind | null }[] = [
   { pattern: /^\s*(?:please\s+)?remember\s+(?:that\s+)?/i, kind: 'note' },
-  { pattern: /^\s*(?:please\s+)?remember\s+(?:this|these)\s+as\s+(?:a\s+)?(preference|fact|context|feedback|note)\s*:\s*/i, kind: null },
+  {
+    pattern:
+      /^\s*(?:please\s+)?remember\s+(?:this|these)\s+as\s+(?:a\s+)?(preference|fact|context|feedback|note)\s*:\s*/i,
+    kind: null,
+  },
   { pattern: /^\s*(?:please\s+)?(?:don't|do\s+not)\s+forget\s+(?:that\s+)?/i, kind: 'preference' },
   // Accept "always remember:" (colon glued) and "always remember that" — the
   // colon-without-space case is the common PT-BR/EN shorthand so we strip the

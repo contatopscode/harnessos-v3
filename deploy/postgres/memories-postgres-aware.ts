@@ -172,9 +172,7 @@ export async function listMemories(options: ListMemoriesOptions = {}): Promise<L
       if (pgResult.rows.length === 0) {
         return { total: 0, memories: [] };
       }
-      const idClauses = pgResult.rows
-        .map((_, i) => `$${params.length + i + 1}::uuid`)
-        .join(',');
+      const idClauses = pgResult.rows.map((_, i) => `$${params.length + i + 1}::uuid`).join(',');
       where.push(`m.id IN (${idClauses})`);
       params.push(...pgResult.rows.map(r => r.id));
     } else {

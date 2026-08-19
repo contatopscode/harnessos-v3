@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { JSX } from 'react';
 import { signIn, signUp } from '../lib/auth-client';
 import { Flame } from 'lucide-react';
 
@@ -6,7 +7,7 @@ import { Flame } from 'lucide-react';
  * Login page — Better Auth email+password against the HarnessOS
  * backend. Cross-origin via cookies (SameSite=None; Secure).
  */
-export function LoginPage() {
+export function LoginPage(): JSX.Element {
   const [mode, setMode] = useState<'signin' | 'signup'>('signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -14,7 +15,7 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
@@ -50,9 +51,9 @@ export function LoginPage() {
           >
             <Flame className="h-6 w-6 text-white" aria-hidden />
           </div>
-          <h1 className="text-xl font-semibold text-[var(--text-primary)]">VOLUND FORGE</h1>
+          <h1 className="text-xl font-semibold text-[var(--text-primary)]">HarnessOS</h1>
           <p className="mt-1 text-[12.5px] text-[var(--text-tertiary)]">
-            PMO surface do HarnessOS
+            Projetos — gestão de clientes, demandas, runs e custos
           </p>
         </div>
 
@@ -136,7 +137,7 @@ interface FieldProps {
   required?: boolean;
 }
 
-function Field({ label, type, value, onChange, placeholder, required }: FieldProps) {
+function Field({ label, type, value, onChange, placeholder, required }: FieldProps): JSX.Element {
   return (
     <label className="block">
       <span className="mb-1.5 block text-[11.5px] font-medium text-[var(--text-secondary)]">
@@ -145,7 +146,9 @@ function Field({ label, type, value, onChange, placeholder, required }: FieldPro
       <input
         type={type}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => {
+          onChange(e.target.value);
+        }}
         placeholder={placeholder}
         required={required}
         className="w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-3 py-2 text-[13px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-magenta)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-ring)]"

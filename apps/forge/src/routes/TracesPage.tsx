@@ -1,6 +1,7 @@
+import type { JSX } from 'react';
 import { PagePlaceholder } from '../components/PagePlaceholder';
 
-export function TracesPage() {
+export function TracesPage(): JSX.Element {
   return (
     <PagePlaceholder
       title="Traces"

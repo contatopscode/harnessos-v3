@@ -1,6 +1,7 @@
+import type { JSX } from 'react';
 import { PagePlaceholder } from '../components/PagePlaceholder';
 
-export function PipelinesPage() {
+export function PipelinesPage(): JSX.Element {
   return (
     <PagePlaceholder
       title="Pipelines"

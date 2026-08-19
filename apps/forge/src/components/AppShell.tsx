@@ -1,13 +1,14 @@
+import type { JSX } from 'react';
 import { Outlet, useLocation } from 'react-router';
 import { Sidebar } from './Sidebar';
 import { useSession } from '../lib/auth-client';
 
 /**
  * AppShell — left rail + main content. Renders a 401-ish splash when
- * the user is not signed in (FORGE requires Better Auth — same cookie
- * as the HarnessOS web UI but consumed cross-origin).
+ * the user is not signed in (HarnessOS Projetos requires Better Auth —
+ * same cookie as the HarnessOS web UI but consumed cross-origin).
  */
-export function AppShell() {
+export function AppShell(): JSX.Element {
   const location = useLocation();
   const { data: session, isPending } = useSession();
 
@@ -24,11 +25,11 @@ export function AppShell() {
       <div className="flex h-screen items-center justify-center bg-[var(--background)]">
         <div className="max-w-md text-center">
           <h1 className="text-2xl font-semibold text-[var(--text-primary)]">
-            FORGE — sessão necessária
+            HarnessOS Projetos — sessão necessária
           </h1>
           <p className="mt-3 text-sm text-[var(--text-secondary)]">
-            Você precisa estar autenticado no HarnessOS pra acessar o
-            FORGE. O login é compartilhado entre os dois apps.
+            Você precisa estar autenticado no HarnessOS pra acessar o Projetos. O login é
+            compartilhado entre os dois apps.
           </p>
           <a
             href="/login"
