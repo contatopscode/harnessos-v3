@@ -261,6 +261,12 @@ import {
 import { messageSchema } from './schemas/conversation.schemas';
 import { adminInvites, publicInvite } from './api.admin-invites';
 import rbac from './api.admin-rbac';
+import forgeClients from './api-forge-clients';
+import forgeDemands from './api-forge-demands';
+import forgeSprints from './api-forge-sprints';
+import forgeOss from './api-forge-oss';
+import forgeCosts from './api-forge-costs';
+import forgeProjects from './api-forge-projects';
 import {
   getCodebaseGitLog,
   postCodebaseGitRevert,
@@ -1899,6 +1905,18 @@ export function registerApiRoutes(
   // requireWebPermission('admin:users' | 'admin:roles') inside the
   // subapp. Mounted BEFORE the API gate for the same reason as adminInvites.
   app.route('/api/admin', rbac);
+
+  // ---- VOLUND FORGE — PMO surface (clients / demands / sprints / OS's / costs / projects) ----
+  // Each subapp is mounted with its own path prefix so URLs stay readable
+  // (`/api/forge/clients`, `/api/forge/demands/board`, `/api/forge/costs/summary`, etc).
+  // Gates inside each subapp use `admin:users` (TODO: narrow to forge:read / forge:write
+  // when those permissions are added in a follow-up migration).
+  app.route('/api/forge/clients', forgeClients);
+  app.route('/api/forge/demands', forgeDemands);
+  app.route('/api/forge/sprints', forgeSprints);
+  app.route('/api/forge/oss', forgeOss);
+  app.route('/api/forge/costs', forgeCosts);
+  app.route('/api/forge/projects', forgeProjects);
 
   // ---- Public invite acceptance ----
   // /api/auth/invite/* is exempted from the API gate via the

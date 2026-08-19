@@ -23,6 +23,14 @@ export * as workflowNodeSessionDb from './workflow-node-sessions';
 export * as userDb from './users';
 export * as agentDb from './agents';
 export * as agentRunDb from './agent-runs';
+// VOLUND FORGE — PMO surface (clients / demands / sprints / OS's / costs / projects)
+export * as forgeClientDb from './clients';
+export * as forgeDemandDb from './demands';
+export * as forgeSprintDb from './sprints';
+export * as forgeOsDb from './oss';
+export * as forgeCostDb from './costs';
+export * as forgeDemandPipelineLinkDb from './demand-pipeline-links';
+export * as forgeProjectDb from './projects';
 
 // Also export individual functions for direct imports
 export * from './conversations';
@@ -35,3 +43,10 @@ export * from './workflow-node-sessions';
 export * from './users';
 export * from './agents';
 export * from './agent-runs';
+export * from './clients';
+export * from './demands';
+export * from './sprints';
+export * from './oss';
+export * from './costs';
+export * from './demand-pipeline-links';
+export * from './projects';
