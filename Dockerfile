@@ -28,11 +28,6 @@ COPY packages/providers/package.json ./packages/providers/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 COPY packages/workflows/package.json ./packages/workflows/
-# apps/forge is a separate webapp (PR2) that ships its own Dockerfile at
-# deploy/forge/Dockerfile. The root image only needs its package.json so
-# the workspace lockfile resolves cleanly; nothing in this image builds
-# or runs the FORGE bundle.
-COPY apps/forge/package.json ./apps/forge/
 
 # Install ALL dependencies (including devDependencies needed for web build)
 # --linker=hoisted: Bun's default "isolated" linker stores packages in
@@ -147,11 +142,6 @@ COPY packages/providers/package.json ./packages/providers/
 COPY packages/server/package.json ./packages/server/
 COPY packages/web/package.json ./packages/web/
 COPY packages/workflows/package.json ./packages/workflows/
-# apps/forge is a separate webapp (PR2) that ships its own Dockerfile at
-# deploy/forge/Dockerfile. The root image only needs its package.json so
-# the workspace lockfile resolves cleanly; nothing in this image builds
-# or runs the FORGE bundle.
-COPY apps/forge/package.json ./apps/forge/
 
 # Install production dependencies only (--ignore-scripts skips husky prepare hook)
 RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
