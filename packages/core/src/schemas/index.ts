@@ -49,26 +49,6 @@ export type {
   DashboardRunsResult,
 } from './workflow-run';
 
-export {
-  roleRowSchema,
-  createRoleBodySchema,
-  assignPermissionBodySchema,
-  assignUserRoleBodySchema,
-  permissionRowSchema,
-  userRoleRowSchema,
-  userDirectPermissionRowSchema,
-  userWithPermissionsSchema,
-  roleWithPermissionsSchema,
-} from './rbac';
-export type {
-  Role,
-  Permission,
-  UserRoleBinding,
-  UserDirectPermission,
-  UserWithPermissions,
-  RoleWithPermissions,
-} from './rbac';
-
 // Agent
 export {
   agentSlugSchema,

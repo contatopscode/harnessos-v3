@@ -172,15 +172,6 @@ export class SqliteAdapter implements IDatabase {
   private initSchema(): void {
     this.createSchema();
     this.migrateColumns();
-    // NOTE: The RBAC seed is NOT run from inside the constructor.
-    // Calling seedRbac() here causes infinite recursion: the seed uses
-    // the shared `pool` from connection.ts, which lazy-initializes the
-    // adapter — but on the FIRST connection.ts call, the singleton
-    // `database` field has not been assigned yet, so getDatabase()
-    // constructs a fresh SqliteAdapter, whose initSchema() then calls
-    // seedRbac() again. The seed is invoked from the getDatabase()
-    // call site AFTER the adapter is assigned to the singleton, which
-    // breaks the cycle.
   }
 
   /**
@@ -390,43 +381,6 @@ export class SqliteAdapter implements IDatabase {
       }
     } catch (e: unknown) {
       getLog().warn({ err: e as Error }, 'db.sqlite_migration_provider_key_vendor_ids_failed');
-    }
-
-    // Migration 029: RBAC backfill — convert legacy `users.role` into
-    // user_roles rows, then DROP the column. Mirrors the Postgres
-    // migration 029 in bundled-schema.generated.ts. Wrapped in a
-    // try/catch so a partial failure (e.g. legacy column already
-    // dropped) doesn't break the rest of the migration run.
-    try {
-      this.db.run('BEGIN');
-      try {
-        // 1. Backfill — for each user with a legacy `role` value,
-        //    insert a user_roles row pointing at the matching seeded
-        //    role. INSERT OR IGNORE keeps the backfill safe across
-        //    re-runs.
-        this.db.run(
-          `INSERT OR IGNORE INTO remote_agent_user_roles (user_id, role_id, granted_at)
-           SELECT u.id, r.id, datetime('now')
-           FROM remote_agent_users u
-           JOIN remote_agent_roles r ON r.slug = u.role`
-        );
-        // 2. Drop the legacy column if it still exists. SQLite does
-        //    not support DROP COLUMN IF EXISTS, so we read
-        //    table_info first. Safe no-op when the column is gone.
-        const userCols = this.db.prepare("PRAGMA table_info('remote_agent_users')").all() as {
-          name: string;
-        }[];
-        if (userCols.some(c => c.name === 'role')) {
-          this.db.run('ALTER TABLE remote_agent_users DROP COLUMN role');
-          getLog().info('rbac_backfill_dropped_legacy_role_column');
-        }
-        this.db.run('COMMIT');
-      } catch (inner: unknown) {
-        this.db.run('ROLLBACK');
-        throw inner;
-      }
-    } catch (e: unknown) {
-      getLog().warn({ err: e as Error }, 'db.sqlite_migration_rbac_backfill_failed');
     }
   }
 
@@ -782,84 +736,6 @@ export class SqliteAdapter implements IDatabase {
           VALUES('delete', old.rowid, old.content);
         INSERT INTO remote_agent_memories_fts(rowid, content) VALUES (new.rowid, new.content);
       END;
-
-      -- RBAC (migration 027-028). Local text-based shims mirroring the
-      -- Postgres tables; the API surface and backfill semantics are
-      -- identical. SQLite uses INTEGER 0/1 for the boolean columns
-      -- (is_system, granted) and the expires_at column is nullable text.
-      CREATE TABLE IF NOT EXISTS remote_agent_roles (
-        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-        slug TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        description TEXT,
-        is_system INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT DEFAULT (datetime('now')),
-        updated_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE TABLE IF NOT EXISTS remote_agent_permissions (
-        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-        slug TEXT NOT NULL UNIQUE,
-        name TEXT NOT NULL,
-        description TEXT,
-        category TEXT,
-        created_at TEXT DEFAULT (datetime('now'))
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_permissions_category
-        ON remote_agent_permissions(category);
-
-      CREATE TABLE IF NOT EXISTS remote_agent_role_permissions (
-        role_id TEXT NOT NULL
-          REFERENCES remote_agent_roles(id) ON DELETE CASCADE,
-        permission_id TEXT NOT NULL
-          REFERENCES remote_agent_permissions(id) ON DELETE CASCADE,
-        granted_at TEXT DEFAULT (datetime('now')),
-        PRIMARY KEY (role_id, permission_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_role_permissions_role
-        ON remote_agent_role_permissions(role_id);
-      CREATE INDEX IF NOT EXISTS idx_role_permissions_permission
-        ON remote_agent_role_permissions(permission_id);
-
-      CREATE TABLE IF NOT EXISTS remote_agent_user_roles (
-        user_id TEXT NOT NULL
-          REFERENCES remote_agent_users(id) ON DELETE CASCADE,
-        role_id TEXT NOT NULL
-          REFERENCES remote_agent_roles(id) ON DELETE CASCADE,
-        granted_by_user_id TEXT
-          REFERENCES remote_agent_users(id) ON DELETE SET NULL,
-        granted_at TEXT DEFAULT (datetime('now')),
-        expires_at TEXT,
-        PRIMARY KEY (user_id, role_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_user_roles_user
-        ON remote_agent_user_roles(user_id);
-      CREATE INDEX IF NOT EXISTS idx_user_roles_role
-        ON remote_agent_user_roles(role_id);
-      CREATE INDEX IF NOT EXISTS idx_user_roles_expires
-        ON remote_agent_user_roles(expires_at)
-        WHERE expires_at IS NOT NULL;
-
-      CREATE TABLE IF NOT EXISTS remote_agent_user_direct_permissions (
-        user_id TEXT NOT NULL
-          REFERENCES remote_agent_users(id) ON DELETE CASCADE,
-        permission_id TEXT NOT NULL
-          REFERENCES remote_agent_permissions(id) ON DELETE CASCADE,
-        granted INTEGER NOT NULL DEFAULT 1,
-        granted_by_user_id TEXT
-          REFERENCES remote_agent_users(id) ON DELETE SET NULL,
-        granted_at TEXT DEFAULT (datetime('now')),
-        expires_at TEXT,
-        PRIMARY KEY (user_id, permission_id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_user_direct_perms_user
-        ON remote_agent_user_direct_permissions(user_id);
-      CREATE INDEX IF NOT EXISTS idx_user_direct_perms_permission
-        ON remote_agent_user_direct_permissions(permission_id);
     `);
     getLog().info('db.sqlite_schema_initialized');
   }
