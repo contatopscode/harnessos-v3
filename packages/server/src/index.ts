@@ -722,9 +722,20 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
     // which /api/auth/* paths fall through to Archon's own handlers vs. Better
     // Auth. A guard test asserts every Archon-registered /api/auth/* route is in
     // it, so adding a route without exempting it fails CI rather than 404ing live.
-    app.on(['POST', 'GET'], '/api/auth/*', (c, next) => {
+    app.on(['POST', 'GET'], '/api/auth/*', async (c, next) => {
       if (isArchonOwnedAuthPath(c.req.path)) return next();
-      return webAuth.handler(c.req.raw);
+      const res = await webAuth.handler(c.req.raw);
+      // Better Auth returns a fresh Response object that bypasses the
+      // app.use('/api/*', cors(...)) middleware. Mirror the CORS headers
+      // onto the response so the browser allows the cross-origin XHR
+      // with credentials (FORGE → HarnessOS).
+      const origin = c.req.header('origin');
+      if (origin) {
+        res.headers.set('Access-Control-Allow-Origin', origin);
+        res.headers.set('Access-Control-Allow-Credentials', 'true');
+        res.headers.set('Vary', 'Origin');
+      }
+      return res;
     });
     getLog().info('web_auth.handler_registered');
     // Safe-default signal: web auth is on but no allowlist + no open-signup flag
