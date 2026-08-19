@@ -11,6 +11,7 @@ import type { DbNotificationListener, IDatabase, SqlDialect, QueryResult } from 
 import { PostgresAdapter, postgresDialect } from './adapters/postgres';
 import { SqliteAdapter, sqliteDialect } from './adapters/sqlite';
 import { createLogger } from '@archon/paths';
+import { seedRbac } from './rbac-seed';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -47,13 +48,27 @@ export function getDatabase(): IDatabase {
     if (process.env.ARCHON_DOCKER === 'true') {
       getLog().warn(
         {
-          hint: 'Add DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent to .env to use PostgreSQL',
+          hint: 'Add DATABASE_URL=postgresql://postgres:postgres@postgres:5432/remote_coding_agent to .env to use Postgres',
           current: dbPath,
         },
         'db.docker_using_sqlite'
       );
     }
   }
+
+  // Kick off the RBAC seed AFTER the adapter singleton is assigned.
+  // Calling seedRbac() from inside the SqliteAdapter constructor would
+  // cause infinite recursion: the seed uses the shared `pool`, which
+  // lazy-initializes the adapter — and on the first connection.ts
+  // call, the singleton `database` field has not been assigned yet,
+  // so getDatabase() would construct a fresh adapter, whose initSchema
+  // calls seedRbac again. By calling it here, the singleton is set and
+  // the recursive lookup short-circuits. The seed function is also
+  // memoized (rbac-seed.ts) so duplicate calls from PostgresAdapter
+  // (which runs its own seed) collapse to one execution.
+  void seedRbac().catch(err => {
+    getLog().error({ err }, 'db.rbac_seed_failed');
+  });
 
   return database;
 }

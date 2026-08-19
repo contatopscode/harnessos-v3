@@ -712,3 +712,178 @@ DROP TRIGGER IF EXISTS memories_content_tsv_trg ON remote_agent_memories;
 CREATE TRIGGER memories_content_tsv_trg
   BEFORE INSERT OR UPDATE ON remote_agent_memories
   FOR EACH ROW EXECUTE FUNCTION memories_content_tsv_update();
+-- Migration 027: RBAC core (roles, permissions, role_permissions)
+--
+-- Why: the legacy `users.role` column was a flat enum ('admin' | 'member')
+-- that could not capture the operator's intent: a user might need sandbox
+-- access without admin powers, or read-only on codebases with no chat
+-- privilege. RBAC makes that explicit and adjustable from the admin UI
+-- without schema migrations.
+--
+-- Three tables:
+--   remote_agent_roles              — named bundles of permissions
+--   remote_agent_permissions        — the catalog of all privileges
+--   remote_agent_role_permissions   — many-to-many bridge
+--
+-- `roles.slug` is the stable identifier (e.g., 'admin', 'member',
+-- 'sandbox-user'). Slugs are unique. `is_system=true` flags roles that
+-- the operator cannot delete (default roles seeded on startup). The
+-- admin UI (PR 6) enforces this; the DB accepts any insert.
+--
+-- `permissions.slug` is the stable identifier (e.g., 'sandbox:create',
+-- 'git:revert'). Codes are colon-namespaced so the gate helper
+-- (requirePermission) can group them by category for the UI.
+--
+-- All FKs cascade on delete so removing a role or permission also
+-- removes its bindings (and removing a user drops their user_roles
+-- rows in migration 028). Idempotent CREATE IF NOT EXISTS so the
+-- bundled-schema apply converges across restarts.
+
+CREATE TABLE IF NOT EXISTS remote_agent_roles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug VARCHAR(64) NOT NULL UNIQUE,
+  name VARCHAR(128) NOT NULL,
+  description TEXT,
+  is_system BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS remote_agent_permissions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug VARCHAR(96) NOT NULL UNIQUE,
+  name VARCHAR(128) NOT NULL,
+  description TEXT,
+  category VARCHAR(64),
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_permissions_category
+  ON remote_agent_permissions(category);
+
+CREATE TABLE IF NOT EXISTS remote_agent_role_permissions (
+  role_id UUID NOT NULL
+    REFERENCES remote_agent_roles(id) ON DELETE CASCADE,
+  permission_id UUID NOT NULL
+    REFERENCES remote_agent_permissions(id) ON DELETE CASCADE,
+  granted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (role_id, permission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role
+  ON remote_agent_role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission
+  ON remote_agent_role_permissions(permission_id);
+
+-- Migration 028: RBAC user bindings (user_roles, user_direct_permissions)
+--
+-- Why: a user has many roles; a role has many users. Plus a flat
+-- per-user override for the rare case where the operator wants to
+-- grant ONE specific permission to a single user without spinning up
+-- a new role (e.g., a contractor needs git:revert but nothing else).
+--
+-- Two tables:
+--   remote_agent_user_roles                — many-to-many: user ↔ role
+--   remote_agent_user_direct_permissions   — per-user grant/revoke override
+--
+-- `user_roles.expires_at` supports temporary grants (e.g., a 30-day
+-- admin boost for a teammate onboarding). NULL = permanent. The gate
+-- helper filters expired rows at read time.
+--
+-- `user_direct_permissions.granted` is a real boolean (not just
+-- presence) so the operator can REVOKE a single permission that
+-- would otherwise be granted by one of the user's roles — without
+-- removing the role. Rare, but the data model supports it.
+--
+-- Cascades: removing a user drops their bindings; removing a role
+-- drops the user_roles row referencing it; removing a permission
+-- drops the direct grant referencing it.
+
+CREATE TABLE IF NOT EXISTS remote_agent_user_roles (
+  user_id UUID NOT NULL
+    REFERENCES remote_agent_users(id) ON DELETE CASCADE,
+  role_id UUID NOT NULL
+    REFERENCES remote_agent_roles(id) ON DELETE CASCADE,
+  granted_by_user_id UUID
+    REFERENCES remote_agent_users(id) ON DELETE SET NULL,
+  granted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE,
+  PRIMARY KEY (user_id, role_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_roles_user
+  ON remote_agent_user_roles(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_role
+  ON remote_agent_user_roles(role_id);
+CREATE INDEX IF NOT EXISTS idx_user_roles_expires
+  ON remote_agent_user_roles(expires_at)
+  WHERE expires_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS remote_agent_user_direct_permissions (
+  user_id UUID NOT NULL
+    REFERENCES remote_agent_users(id) ON DELETE CASCADE,
+  permission_id UUID NOT NULL
+    REFERENCES remote_agent_permissions(id) ON DELETE CASCADE,
+  granted BOOLEAN NOT NULL DEFAULT TRUE,
+  granted_by_user_id UUID
+    REFERENCES remote_agent_users(id) ON DELETE SET NULL,
+  granted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMP WITH TIME ZONE,
+  PRIMARY KEY (user_id, permission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_direct_perms_user
+  ON remote_agent_user_direct_permissions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_direct_perms_permission
+  ON remote_agent_user_direct_permissions(permission_id);
+
+-- Migration 029: RBAC backfill — migrate legacy `users.role` into the
+-- new m:n table, then drop the legacy column.
+--
+-- Why: the legacy column held one of two flat values ('admin',
+-- 'member'). Each existing user gets exactly one user_roles row
+-- pointing at the matching seeded role. The two seed roles (admin,
+-- member) are referenced by slug so the backfill does not need their
+-- UUIDs — but only if they were already seeded. The seed runs on
+-- startup in @archon/core/db/rbac-seed, so by the time a backfill
+-- executes on an existing install, the admin/member roles exist.
+--
+-- Idempotent:
+--   - INSERT ... ON CONFLICT DO NOTHING prevents double-insert
+--   - The legacy column DROP is wrapped in a DO block that checks
+--     the column exists; safe to re-run on a fresh install where
+--     the column was never created.
+--
+-- Net effect: after this migration runs once, `users.role` no longer
+-- exists, and every former 'admin' user has a user_roles row pointing
+-- at the seeded 'admin' role (with all its permissions, seeded in
+-- 027 via rbac-seed). Same for 'member'.
+
+-- Backfill: convert each existing users.role value into a user_roles row
+-- pointing at the matching seeded role. ON CONFLICT keeps the backfill
+-- safe across re-runs (e.g., when the legacy column was already dropped
+-- and a stale copy of this migration replays).
+INSERT INTO remote_agent_user_roles (user_id, role_id, granted_at)
+SELECT
+  u.id,
+  r.id,
+  NOW()
+FROM remote_agent_users u
+JOIN remote_agent_roles r ON r.slug = u.role
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
+-- Drop the legacy column. Wrapped in DO so re-running this migration
+-- on a fresh install (where the column never existed) is a no-op
+-- rather than a hard error.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'remote_agent_users'
+      AND column_name = 'role'
+  ) THEN
+    ALTER TABLE remote_agent_users DROP COLUMN role;
+  END IF;
+END
+$$;
+
