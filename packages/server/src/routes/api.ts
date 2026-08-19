@@ -1741,9 +1741,33 @@ export function registerApiRoutes(
     });
   }
 
-  // CORS for Web UI — allow-all is fine for a single-developer tool.
-  // Override with WEB_UI_ORIGIN env var to restrict if exposing publicly.
-  app.use('/api/*', cors({ origin: process.env.WEB_UI_ORIGIN || '*' }));
+  // CORS for Web UI — defaults to wildcard for a single-developer tool,
+  // but `credentials: true` (used by Better Auth cross-origin cookies)
+  // requires an EXPLICIT origin, not `*`. So we use a function that
+  // echoes back the request Origin when it matches a trusted one (from
+  // BETTER_AUTH_TRUSTED_ORIGINS), and falls back to the explicit
+  // WEB_UI_ORIGIN env if set.
+  const trustedCorsOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const explicitOrigin = process.env.WEB_UI_ORIGIN;
+  app.use(
+    '/api/*',
+    cors({
+      origin: origin => {
+        if (!origin) return explicitOrigin ?? trustedCorsOrigins[0] ?? '*';
+        if (trustedCorsOrigins.includes(origin)) return origin;
+        if (explicitOrigin && origin === explicitOrigin) return origin;
+        // For unknown origins, return the explicit origin (or first trusted)
+        // — this means the browser sees a non-wildcard ACAO, the cookie
+        // still works, and unknown origins are explicitly rejected by the
+        // server-side auth gate (resolveAuthContext) below.
+        return explicitOrigin ?? trustedCorsOrigins[0] ?? '*';
+      },
+      credentials: true,
+    })
+  );
 
   // Server-side access gate: when web auth is enabled (and not opted out via
   // ARCHON_WEB_AUTH_REQUIRED=false), every /api/* request must resolve to an
