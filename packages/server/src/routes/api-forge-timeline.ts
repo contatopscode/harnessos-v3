@@ -25,11 +25,14 @@ const timeline = new Hono();
 /**
  * GET /api/forge/demands/:id/timeline
  *
+ * Mounted at /api/forge/demands (see api.ts). The full path is
+ * /api/forge/demands/:id/timeline.
+ *
  * Query params: limit (default 100, max 500)
  *
  * Returns: { demand, entries: [...], totals: { activities, runs, cost_calls, cost_total_usd, cost_total_brl, messages } }
  */
-timeline.get('/demands/:id/timeline', async c => {
+timeline.get('/:id/timeline', async c => {
   const guard = await requireWebPermission(c, 'admin:users');
   if ('error' in guard) return guard.error;
   const id = c.req.param('id');
