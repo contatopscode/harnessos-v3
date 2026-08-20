@@ -237,6 +237,7 @@ export function CustosPage(): JSX.Element {
                   <th className="px-3 py-2 text-left font-medium">Quando</th>
                   <th className="px-3 py-2 text-left font-medium">Modelo</th>
                   <th className="px-3 py-2 text-left font-medium">Kind</th>
+                  <th className="px-3 py-2 text-left font-medium">Demanda</th>
                   <th className="px-3 py-2 text-right font-medium">Tokens in / out</th>
                   <th className="px-3 py-2 text-right font-medium">USD</th>
                   <th className="px-3 py-2 text-right font-medium">BRL</th>
@@ -258,6 +259,15 @@ export function CustosPage(): JSX.Element {
                       {c.model}
                     </td>
                     <td className="px-3 py-1.5 text-[var(--text-secondary)]">{c.kind}</td>
+                    <td className="px-3 py-1.5 font-mono text-[10.5px] text-[var(--text-tertiary)]">
+                      {c.demand_id ? (
+                        <span title={c.demand_id} className="cursor-help">
+                          {c.demand_id.slice(0, 8)}…
+                        </span>
+                      ) : (
+                        <span className="text-[var(--text-tertiary)]/50">—</span>
+                      )}
+                    </td>
                     <td className="px-3 py-1.5 text-right font-mono text-[var(--text-secondary)] tabular-nums">
                       {compactNumber(c.tokens_in)} / {compactNumber(c.tokens_out)}
                     </td>

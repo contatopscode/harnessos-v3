@@ -127,6 +127,7 @@ export type DemandStatus =
   | 'requisitos'
   | 'aprovacao_cliente'
   | 'em_andamento'
+  | 'bloqueada' // auto-set when a workflow run fails
   | 'concluido'
   | 'cancelado';
 export type DemandPriority = 'baixa' | 'media' | 'alta' | 'urgente';
@@ -145,6 +146,12 @@ export interface Demand {
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+  // Audit-trail summary (populated by triggers/hooks in migration 036)
+  last_activity_at: string | null;
+  last_run_id: string | null;
+  last_run_status: string | null;
+  runs_count: number;
+  messages_count: number;
 }
 
 export interface DemandBoard {
@@ -284,6 +291,76 @@ export interface ChatReply {
   model: string;
   latency_ms: number;
   context: ChatContext;
+  /** Server-assigned conversation id — pass back on the next call
+   *  to keep the same thread. The server re-uses an existing
+   *  conversation for the (user, codebase_id) pair automatically. */
+  conversation_id?: string;
+  /** Id of the user message row that was persisted before the LLM
+   *  was called — useful for the timeline / audit trail UI. */
+  user_message_id?: string;
+}
+
+// =========================================================================
+// Demand activities + timeline
+// =========================================================================
+
+export type DemandActivityAction =
+  | 'created'
+  | 'status_change'
+  | 'priority_change'
+  | 'run_started'
+  | 'run_completed'
+  | 'run_failed'
+  | 'message'
+  | 'note';
+
+export interface DemandActivity {
+  id: string;
+  demand_id: string;
+  action: DemandActivityAction;
+  from_status: string | null;
+  to_status: string | null;
+  from_priority: string | null;
+  to_priority: string | null;
+  run_id: string | null;
+  message_id: string | null;
+  user_id: string | null;
+  note: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DemandTimelineEntry {
+  kind: 'activity' | 'run' | 'cost' | 'message';
+  at: string;
+  title: string;
+  detail: string | null;
+  activity?: DemandActivity;
+  run_id?: string;
+  run_status?: string;
+  run_workflow_name?: string;
+  cost_id?: string;
+  cost_model?: string;
+  cost_tokens_in?: number;
+  cost_tokens_out?: number;
+  cost_amount_usd?: number;
+  cost_amount_brl?: number;
+  message_id?: string;
+  message_role?: string;
+  message_preview?: string;
+}
+
+export interface DemandTimeline {
+  demand: Demand;
+  entries: DemandTimelineEntry[];
+  totals: {
+    activities: number;
+    runs: number;
+    cost_calls: number;
+    cost_total_usd: number;
+    cost_total_brl: number;
+    messages: number;
+  };
 }
 
 // =========================================================================
@@ -348,6 +425,21 @@ export const api = {
         method: 'PATCH',
         body: { status },
       }),
+    timeline: (id: string, limit = 100) =>
+      request<DemandTimeline>(`/api/forge/demands/${id}/timeline`, { query: { limit } }),
+    addActivity: (
+      id: string,
+      body: {
+        action?: 'note' | 'status_change' | 'priority_change';
+        note: string;
+        to_status?: DemandStatus;
+        to_priority?: DemandPriority;
+        metadata?: Record<string, unknown>;
+      }
+    ) => request<{ activity: DemandActivity; demand?: Demand }>(
+        `/api/forge/demands/${id}/activities`,
+        { method: 'POST', body }
+      ),
   },
   sprints: {
     list: (filter?: { clientId?: string }) =>

@@ -40,7 +40,26 @@ export function ChatPage(): JSX.Element {
   const qc = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  // Conversation is persisted in localStorage so the history survives a
+  // page reload. The backend creates a new conversation per (user, codebase_id)
+  // pair automatically and re-uses it across calls.
+  const [conversationId, setConversationId] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('forge.chat.conversationId');
+    } catch {
+      return null;
+    }
+  });
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Persist conversation_id as it evolves
+  useEffect(() => {
+    try {
+      if (conversationId) localStorage.setItem('forge.chat.conversationId', conversationId);
+    } catch {
+      // localStorage may be blocked (private mode) — fail silently
+    }
+  }, [conversationId]);
 
   const ask = useMutation({
     mutationFn: api.chat.ask,
@@ -48,7 +67,7 @@ export function ChatPage(): JSX.Element {
       setMessages(prev => [
         ...prev,
         {
-          id: `assistant-${String(Date.now())}`,
+          id: `assistant-${data.user_message_id ?? String(Date.now())}`,
           role: 'assistant',
           content: data.reply,
           model: data.model,
@@ -57,6 +76,11 @@ export function ChatPage(): JSX.Element {
           createdAt: Date.now(),
         },
       ]);
+      // Server may have created a new conversation on the first call —
+      // save the id so the next call continues the same thread.
+      if (data.conversation_id && data.conversation_id !== conversationId) {
+        setConversationId(data.conversation_id);
+      }
       // re-fetch custos pra refletir o novo cost row
       void qc.invalidateQueries({ queryKey: ['forge', 'costs'] });
     },
@@ -83,7 +107,8 @@ export function ChatPage(): JSX.Element {
       },
     ]);
     setInput('');
-    ask.mutate({ message: trimmed });
+    // Pass the conversation_id so the server re-uses the same thread
+    ask.mutate({ message: trimmed, ...(conversationId ? { conversation_id: conversationId } : {}) });
   }
 
   function onSubmit(e: React.FormEvent): void {
@@ -97,6 +122,15 @@ export function ChatPage(): JSX.Element {
 
   function clearChat(): void {
     setMessages([]);
+    // Start a new conversation thread on the server (next ask() will
+    // get a new conversation_id back and the previous one stays in the
+    // history for the timeline/audit trail).
+    setConversationId(null);
+    try {
+      localStorage.removeItem('forge.chat.conversationId');
+    } catch {
+      // ignore
+    }
   }
 
   return (

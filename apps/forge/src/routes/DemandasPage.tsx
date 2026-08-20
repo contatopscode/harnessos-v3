@@ -1,9 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Demand, type DemandStatus, ApiError } from '../lib/api';
-import { Loader2, Plus, Search } from 'lucide-react';
+import { Loader2, Plus, Search, Activity, History } from 'lucide-react';
 import { useState } from 'react';
 import type { JSX } from 'react';
 import { cn } from '../lib/cn';
+import { DemandTimelineModal } from '../components/DemandTimelineModal';
 
 const COLUMNS: { status: DemandStatus; label: string; accent: string }[] = [
   { status: 'backlog', label: 'Backlog', accent: 'var(--text-tertiary)' },
@@ -11,6 +12,7 @@ const COLUMNS: { status: DemandStatus; label: string; accent: string }[] = [
   { status: 'requisitos', label: 'Requisitos', accent: 'var(--brand-violet)' },
   { status: 'aprovacao_cliente', label: 'Aprovação Cliente', accent: 'var(--warning)' },
   { status: 'em_andamento', label: 'Em andamento', accent: 'var(--success)' },
+  { status: 'bloqueada', label: 'Bloqueada', accent: 'var(--error)' },
   { status: 'concluido', label: 'Concluído', accent: 'var(--success)' },
   { status: 'cancelado', label: 'Cancelado', accent: 'var(--text-tertiary)' },
 ];
@@ -18,6 +20,7 @@ const COLUMNS: { status: DemandStatus; label: string; accent: string }[] = [
 export function DemandasPage(): JSX.Element {
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const [timelineFor, setTimelineFor] = useState<Demand | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['forge', 'demands', 'board', search],
@@ -83,10 +86,21 @@ export function DemandasPage(): JSX.Element {
               onMove={(id, status) => {
                 moveStatus.mutate({ id, status });
               }}
+              onOpenTimeline={d => {
+                setTimelineFor(d);
+              }}
             />
           ))}
         </div>
       )}
+
+      <DemandTimelineModal
+        demand={timelineFor ?? data?.columns[0]?.demands[0] ?? ({} as Demand)}
+        open={timelineFor !== null}
+        onClose={() => {
+          setTimelineFor(null);
+        }}
+      />
     </div>
   );
 }
@@ -97,9 +111,10 @@ interface ColumnProps {
   accent: string;
   demands: Demand[];
   onMove: (id: string, status: DemandStatus) => void;
+  onOpenTimeline: (demand: Demand) => void;
 }
 
-function Column({ label, accent, demands, onMove }: ColumnProps): JSX.Element {
+function Column({ label, accent, demands, onMove, onOpenTimeline }: ColumnProps): JSX.Element {
   return (
     <div className="flex min-h-[120px] flex-col rounded-[10px] bg-[var(--surface-inset)]/60 p-2">
       <div className="mb-2 flex items-center justify-between px-1.5">
@@ -119,7 +134,7 @@ function Column({ label, accent, demands, onMove }: ColumnProps): JSX.Element {
             vazio
           </div>
         ) : (
-          demands.map(d => <Card key={d.id} demand={d} onMove={onMove} />)
+          demands.map(d => <Card key={d.id} demand={d} onMove={onMove} onOpenTimeline={onOpenTimeline} />)
         )}
       </div>
     </div>
@@ -129,9 +144,10 @@ function Column({ label, accent, demands, onMove }: ColumnProps): JSX.Element {
 interface CardProps {
   demand: Demand;
   onMove: (id: string, status: DemandStatus) => void;
+  onOpenTimeline: (demand: Demand) => void;
 }
 
-function Card({ demand, onMove }: CardProps): JSX.Element {
+function Card({ demand, onMove, onOpenTimeline }: CardProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const priorityColor =
     demand.priority === 'urgente'
@@ -139,13 +155,17 @@ function Card({ demand, onMove }: CardProps): JSX.Element {
       : demand.priority === 'alta'
         ? 'var(--warning)'
         : 'var(--text-tertiary)';
+  const isBlocked = demand.status === 'bloqueada';
   return (
     <div
       onClick={() => {
         setOpen(o => !o);
       }}
       className={cn(
-        'group cursor-pointer rounded-md border border-[var(--border)] bg-[var(--surface)] p-2.5 transition hover:border-[var(--border-bright)] hover:bg-[var(--surface-elevated)]',
+        'group cursor-pointer rounded-md border bg-[var(--surface)] p-2.5 transition hover:border-[var(--border-bright)] hover:bg-[var(--surface-elevated)]',
+        isBlocked
+          ? 'border-[var(--error)]/40 bg-[var(--error-soft)]/30'
+          : 'border-[var(--border)]',
         open && 'ring-1 ring-[var(--accent-ring)]'
       )}
     >
@@ -163,6 +183,26 @@ function Card({ demand, onMove }: CardProps): JSX.Element {
       <h4 className="mt-1 line-clamp-2 text-[12.5px] font-medium leading-tight text-[var(--text-primary)]">
         {demand.title}
       </h4>
+      {/* Counter strip — shows at-a-glance activity from the audit trail */}
+      <div className="mt-1.5 flex items-center gap-2 text-[9.5px] text-[var(--text-tertiary)]">
+        {demand.runs_count > 0 && (
+          <span className="inline-flex items-center gap-0.5">
+            <Activity className="h-2.5 w-2.5" aria-hidden />
+            {demand.runs_count}
+          </span>
+        )}
+        {demand.messages_count > 0 && (
+          <span className="inline-flex items-center gap-0.5">
+            💬 {demand.messages_count}
+          </span>
+        )}
+        {demand.last_run_status === 'failed' && (
+          <span className="font-medium text-[var(--error)]">último run falhou</span>
+        )}
+        {demand.last_run_status === 'succeeded' && (
+          <span className="font-medium text-[var(--success)]">último run OK</span>
+        )}
+      </div>
       {open && (
         <div className="mt-2 space-y-1.5 border-t border-[var(--border)] pt-2 text-[10.5px]">
           <div className="flex flex-wrap gap-1">
@@ -180,6 +220,17 @@ function Card({ demand, onMove }: CardProps): JSX.Element {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              onOpenTimeline(demand);
+            }}
+            className="flex w-full items-center justify-center gap-1 rounded-sm bg-[var(--brand-magenta)]/10 px-2 py-1 text-[10px] font-medium text-[var(--brand-magenta)] transition hover:bg-[var(--brand-magenta)]/20"
+          >
+            <History className="h-3 w-3" aria-hidden />
+            Ver timeline ({demand.runs_count + demand.messages_count} eventos)
+          </button>
         </div>
       )}
     </div>

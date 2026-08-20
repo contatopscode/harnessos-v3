@@ -268,6 +268,9 @@ import forgeOss from './api-forge-oss';
 import forgeCosts from './api-forge-costs';
 import forgeProjects from './api-forge-projects';
 import forgeChat from './api-forge-chat';
+import forgeActivities from './api-forge-activities';
+import forgeTimeline from './api-forge-timeline';
+import auditLog from './api-audit-log';
 import {
   getCodebaseGitLog,
   postCodebaseGitRevert,
@@ -1943,6 +1946,16 @@ export function registerApiRoutes(
   app.route('/api/forge/costs', forgeCosts);
   app.route('/api/forge/projects', forgeProjects);
   app.route('/api/forge/chat', forgeChat);
+  // activities + timeline mounted directly under /api/forge (the
+  // activities router defines its own /demands/:id/... prefix)
+  app.route('/api/forge', forgeActivities);
+  app.route('/api/forge', forgeTimeline);
+
+  // ---- Global audit log (admin-only) ----
+  // Migration 037: "tudo, absolutamente tudo tem que ser registrado".
+  // Mounted under /api/audit/log for the global view + /api/audit/log/entity/:type/:id
+  // for per-entity histories (used by FORGE Cliente/Projeto detail pages).
+  app.route('/api/audit', auditLog);
 
   // ---- Public invite acceptance ----
   // /api/auth/invite/* is exempted from the API gate via the
