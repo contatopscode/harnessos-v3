@@ -300,6 +300,14 @@ export interface ChatReply {
   user_message_id?: string;
 }
 
+export interface ChatHistoryMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 // =========================================================================
 // Demand activities + timeline
 // =========================================================================
@@ -436,7 +444,8 @@ export const api = {
         to_priority?: DemandPriority;
         metadata?: Record<string, unknown>;
       }
-    ) => request<{ activity: DemandActivity; demand?: Demand }>(
+    ) =>
+      request<{ activity: DemandActivity; demand?: Demand }>(
         `/api/forge/demands/${id}/activities`,
         { method: 'POST', body }
       ),
@@ -534,5 +543,10 @@ export const api = {
   chat: {
     ask: (body: { message: string; codebase_id?: string; conversation_id?: string }) =>
       request<ChatReply>('/api/forge/chat', { method: 'POST', body }),
+    messages: (conversationId: string, limit = 200) =>
+      request<{ conversation_id: string; messages: ChatHistoryMessage[] }>(
+        `/api/forge/chat/conversations/${conversationId}/messages`,
+        { query: { limit } }
+      ),
   },
 };

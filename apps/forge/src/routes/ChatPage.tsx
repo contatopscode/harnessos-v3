@@ -6,16 +6,19 @@
  * (MiniMax M3) só responde perguntas sobre esse universo. Não toca
  * em código, não inventa números, não toma ações destrutivas.
  *
- * Histórico fica em memória (não persiste entre reloads) — é um console
- * de exploração, não um chat log de produção. Cada mensagem registra
- * latência + model + contagem de contexto, pra dar confiança no que
- * o agente está "vendo".
+ * **Histórico persiste no DB** (mesmo padrão do HarnessOS Web chat):
+ * - Cada (user, codebase_id) tem 1 conversation salva
+ * - conversation_id sobrevive reloads via localStorage
+ * - GET /api/forge/chat/conversations/:id/messages hidrata a thread
+ *   na primeira renderização, mantendo o chat idêntico entre sessões
+ * - "Limpar" apenas fecha a thread atual e abre uma nova (a antiga
+ *   continua viva no DB para o audit trail)
  */
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { Loader2, Send, Sparkles, User, Bot, AlertCircle, RotateCcw } from 'lucide-react';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, type ChatHistoryMessage } from '../lib/api';
 import { cn } from '../lib/cn';
 
 interface ChatMessage {
@@ -60,6 +63,45 @@ export function ChatPage(): JSX.Element {
       // localStorage may be blocked (private mode) — fail silently
     }
   }, [conversationId]);
+
+  // Hydrate the message list from the DB on mount + whenever the
+  // conversation_id changes. `enabled: false` when there's no id yet
+  // (first visit, no stored id, server hasn't returned one) — the
+  // empty state then renders with the suggestion chips.
+  const historyQuery = useQuery({
+    queryKey: ['forge', 'chat', 'history', conversationId],
+    queryFn: () => {
+      if (!conversationId) {
+        return Promise.resolve({ conversation_id: '', messages: [] as ChatHistoryMessage[] });
+      }
+      return api.chat.messages(conversationId, 200);
+    },
+    enabled: conversationId !== null,
+    staleTime: 30_000,
+  });
+
+  // Seed `messages` from the DB exactly once per conversation — when the
+  // query transitions from loading → success, take whatever the server
+  // returned as the new source of truth. Subsequent sends append locally
+  // (via the ask.onSuccess callback) and the next mount re-fetches.
+  const seededForRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (historyQuery.isLoading || !historyQuery.data) return;
+    const data = historyQuery.data;
+    if (data.messages.length === 0) return; // empty thread — keep local state empty
+    if (seededForRef.current === conversationId) return; // already seeded for this id
+    seededForRef.current = conversationId;
+    setMessages(
+      data.messages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        model: typeof m.metadata.model === 'string' ? m.metadata.model : undefined,
+        latencyMs: typeof m.metadata.latency_ms === 'number' ? m.metadata.latency_ms : undefined,
+        createdAt: new Date(m.created_at).getTime(),
+      }))
+    );
+  }, [historyQuery.data, historyQuery.isLoading, conversationId]);
 
   const ask = useMutation({
     mutationFn: api.chat.ask,
@@ -108,7 +150,10 @@ export function ChatPage(): JSX.Element {
     ]);
     setInput('');
     // Pass the conversation_id so the server re-uses the same thread
-    ask.mutate({ message: trimmed, ...(conversationId ? { conversation_id: conversationId } : {}) });
+    ask.mutate({
+      message: trimmed,
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+    });
   }
 
   function onSubmit(e: React.FormEvent): void {
@@ -126,6 +171,7 @@ export function ChatPage(): JSX.Element {
     // get a new conversation_id back and the previous one stays in the
     // history for the timeline/audit trail).
     setConversationId(null);
+    seededForRef.current = null;
     try {
       localStorage.removeItem('forge.chat.conversationId');
     } catch {
