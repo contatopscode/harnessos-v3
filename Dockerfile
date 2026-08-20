@@ -1,72 +1,59 @@
 # =============================================================================
-# Archon / HarnessOS - Remote Agentic Coding Platform
-# Multi-stage build optimized for BuildKit cache mounts.
-#
-# Why this shape:
-#   - `--mount=type=cache` (Bun / apt / npm) keeps the package cache warm
-#     across deploys. A deploy that touches one .ts file re-uses the entire
-#     `bun install` result, slashing the 4-5 minute "fresh install" penalty
-#     that was killing Easypanel deploys at the 9-minute build timeout.
-#   - Three explicit stages: `base-deps` (cached, prod-only deps) → `builder`
-#     (adds dev deps + web build) → `production` (slim runtime, no test src).
-#   - Apt + npm + Bun caches are declared PER RUN so each one re-uses its
-#     own cache slot (different mount targets, distinct `--mount` ids).
-#   - `apt-get` only runs once per `RUN` invocation; each stage that needs
-#     a system package uses the same cache mount id, so the second call
-#     within a multi-RUN stage also hits the cache.
+# Archon - Remote Agentic Coding Platform
+# Multi-stage build: deps → web build → production image
 # =============================================================================
 
 # ---------------------------------------------------------------------------
-# Stage 1: Base deps (prod-only) — cached across deploys when package.json
-# is unchanged. Layer is small (just node_modules) and pulls forward to the
-# production stage via `--from=base-deps`.
+# Stage 1: Install dependencies
 # ---------------------------------------------------------------------------
-FROM oven/bun:1.3.11-slim AS base-deps
+FROM oven/bun:1.3.11-slim AS deps
 
 WORKDIR /app
 
-# Copy lockfile + every workspace package.json (Bun's workspace resolver
-# requires them present even when installing prod-only deps).
+# Copy root package files and lockfile
 COPY package.json bun.lock ./
-COPY packages/*/package.json ./packages/
-COPY apps/*/package.json ./apps/
 
-# Bun install cache survives across `docker build` invocations when the
-# build context runs on a BuildKit-enabled daemon (Easypanel uses
-# `docker buildx build --network host`, so the cache mount works).
-# `--ignore-scripts` skips husky's `prepare` hook (we're inside a container,
-# not a git repo, and the postinstall side-effects of optional deps aren't
-# required at runtime).
-RUN --mount=type=cache,target=/root/.bun/install/cache,id=bun-install \
-    bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
+# Copy ALL workspace package.json files (monorepo lockfile depends on all of them)
+COPY packages/adapters/package.json ./packages/adapters/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/core/package.json ./packages/core/
+# docs-web source is NOT copied — it's a static site deployed separately
+# (see .github/workflows/deploy-docs.yml). package.json is included only
+# so Bun's workspace lockfile resolves correctly.
+COPY packages/docs-web/package.json ./packages/docs-web/
+COPY packages/git/package.json ./packages/git/
+COPY packages/isolation/package.json ./packages/isolation/
+COPY packages/paths/package.json ./packages/paths/
+COPY packages/providers/package.json ./packages/providers/
+COPY packages/server/package.json ./packages/server/
+COPY packages/web/package.json ./packages/web/
+COPY packages/workflows/package.json ./packages/workflows/
+# apps/forge is a workspace member of this monorepo. Its package.json must
+# be present in the build context so Bun's workspace lockfile resolution
+# succeeds (the lockfile references @archon/forge@workspace:apps/forge).
+COPY apps/forge/package.json ./apps/forge/
+
+# Install ALL dependencies (including devDependencies needed for web build)
+# --linker=hoisted: Bun's default "isolated" linker stores packages in
+# node_modules/.bun/ with symlinks that Vite/Rollup cannot resolve during
+# production builds. Hoisted layout gives classic flat node_modules.
+RUN bun install --frozen-lockfile --linker=hoisted
 
 # ---------------------------------------------------------------------------
-# Stage 2: Builder — adds devDependencies + runs the Vite web build.
-# Inherits the hoisted node_modules from base-deps so Bun's workspace
-# links resolve. Only the missing devDeps get installed (incremental).
+# Stage 2: Build web UI (Vite + React)
 # ---------------------------------------------------------------------------
-FROM base-deps AS builder
+FROM deps AS web-build
 
-# Install devDependencies needed for the web build (Vite, tsc, etc.).
-# Reuses the same cache mount id as base-deps so Bun's package cache is
-# shared between the two stages.
-RUN --mount=type=cache,target=/root/.bun/install/cache,id=bun-install \
-    bun install --frozen-lockfile --linker=hoisted
-
-# Copy the rest of the source. .dockerignore keeps this fast:
-#   - node_modules/** already excluded
-#   - .git/** already excluded
-#   - test files excluded
-#   - .claude/skills/archon + manage-run kept (Path B)
+# Copy full source (needed for workspace resolution and web build)
 COPY . .
 
-# Build the web frontend. Output goes to packages/web/dist/.
+# Build the web frontend — output goes to packages/web/dist/
 RUN bun run build:web && \
     test -f packages/web/dist/index.html || \
     (echo "ERROR: Web build produced no index.html" >&2 && exit 1)
 
 # ---------------------------------------------------------------------------
-# Stage 3: Production runtime — slim image, no source, no devDeps.
+# Stage 3: Production image
 # ---------------------------------------------------------------------------
 FROM oven/bun:1.3.11-slim AS production
 
@@ -80,59 +67,57 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# Combined apt install: every system dep lands in one cached layer.
-# The same cache mount id is used across runs so the second `apt-get`
-# (GitHub CLI + agent-browser deps) re-uses the package cache.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=apt-lib \
-    --mount=type=cache,target=/root/.npm,id=npm-cache \
-    set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-        curl \
-        git \
-        bash \
-        ca-certificates \
-        gnupg \
-        gosu \
-        postgresql-client \
-        # ripgrep + jq: expected by Claude Code / Codex agents (rg is their default
-        # code-search tool; jq powers JSON handling in bash workflow nodes) — see #1836
-        ripgrep \
-        jq \
-        # Chromium for agent-browser E2E testing (drives browser via CDP)
-        chromium \
-        # Node.js + npm are needed only for the agent-browser postinstall step
-        # (it downloads a native Rust binary). Removed after install.
-        nodejs \
-        npm; \
-    # GitHub CLI: pinned repo + keyring, then apt install.
-    curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-      | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg; \
-    chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg; \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-      | tee /etc/apt/sources.list.d/github-cli.list > /dev/null; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends gh; \
-    # agent-browser: npm install grabs the Node wrapper; we copy the native
-    # binary out, then drop nodejs/npm entirely (~60MB saved).
-    npm install -g agent-browser@0.22.1; \
-    NATIVE_BIN=$(find /usr/local/lib/node_modules/agent-browser -name 'agent-browser-*' -type f -executable 2>/dev/null | head -1); \
-    if [ -n "$NATIVE_BIN" ]; then \
-         cp "$NATIVE_BIN" /usr/local/bin/agent-browser-native; \
-         chmod +x /usr/local/bin/agent-browser-native; \
-         ln -sf /usr/local/bin/agent-browser-native /usr/local/bin/agent-browser; \
-    else \
-         echo "ERROR: agent-browser native binary not found after npm install" >&2; exit 1; \
-    fi; \
-    npm cache clean --force; \
-    rm -rf /usr/local/lib/node_modules/agent-browser; \
-    apt-get purge -y nodejs npm; \
-    apt-get autoremove -y; \
-    rm -rf /var/lib/apt/lists/*
+# Install system dependencies + gosu for privilege dropping in entrypoint
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    bash \
+    ca-certificates \
+    gnupg \
+    gosu \
+    postgresql-client \
+    # ripgrep + jq: expected by Claude Code / Codex agents (rg is their default
+    # code-search tool; jq powers JSON handling in bash workflow nodes) — see #1836
+    ripgrep \
+    jq \
+    # Chromium for agent-browser E2E testing (drives browser via CDP)
+    chromium \
+    && rm -rf /var/lib/apt/lists/*
 
-# Point agent-browser to system Chromium (avoids ~400MB Chrome-for-Testing download)
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install agent-browser CLI (Vercel Labs) for E2E testing workflows
+# - Uses npm (not bun) because postinstall script downloads the native Rust binary
+# - After install, symlink the Rust binary directly and purge nodejs/npm (~60MB saved)
+# - The npm entry point is a Node.js wrapper; the native binary works standalone
+# - agent-browser auto-detects Docker (via /.dockerenv) and adds --no-sandbox to Chromium
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm \
+    && npm install -g agent-browser@0.22.1 \
+    && NATIVE_BIN=$(find /usr/local/lib/node_modules/agent-browser -name 'agent-browser-*' -type f -executable 2>/dev/null | head -1) \
+    && if [ -n "$NATIVE_BIN" ]; then \
+         cp "$NATIVE_BIN" /usr/local/bin/agent-browser-native \
+         && chmod +x /usr/local/bin/agent-browser-native \
+         && ln -sf /usr/local/bin/agent-browser-native /usr/local/bin/agent-browser; \
+       else \
+         echo "ERROR: agent-browser native binary not found after npm install" >&2 && exit 1; \
+       fi \
+    && npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/agent-browser \
+    && apt-get purge -y nodejs npm \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Point agent-browser to system Chromium (avoids ~400MB Chrome for Testing download)
 ENV AGENT_BROWSER_EXECUTABLE_PATH=/usr/bin/chromium
+
+# CLAUDE_BIN_PATH is set at container startup (docker-entrypoint.sh).
+# The entrypoint pins the glibc variant to bypass the SDK's musl-first resolver.
 
 # Create non-root user for running Claude Code
 # Claude Code refuses to run with --dangerously-skip-permissions as root for security
@@ -143,14 +128,31 @@ RUN useradd -m -u 1001 -s /bin/bash appuser \
 RUN mkdir -p /.archon/workspaces /.archon/worktrees \
     && chown -R appuser:appuser /.archon
 
-# Production deps: pull the hoisted node_modules from base-deps (already
-# `bun install --production`'d there — this is the BIG win: no second
-# download, no apt interaction, just a layer copy).
-COPY --from=base-deps /app/node_modules ./node_modules
+# Copy root package files and lockfile
+COPY package.json bun.lock ./
 
-# Application source: each package directory is its own COPY so changes
-# in one package don't bust the cache for the others. `bun` runs TS
-# directly, no compile step needed.
+# Copy ALL workspace package.json files
+COPY packages/adapters/package.json ./packages/adapters/
+COPY packages/cli/package.json ./packages/cli/
+COPY packages/core/package.json ./packages/core/
+# docs-web source is NOT copied — it's a static site deployed separately
+# (see .github/workflows/deploy-docs.yml). package.json is included only
+# so Bun's workspace lockfile resolves correctly.
+COPY packages/docs-web/package.json ./packages/docs-web/
+COPY packages/git/package.json ./packages/git/
+COPY packages/isolation/package.json ./packages/isolation/
+COPY packages/paths/package.json ./packages/paths/
+COPY packages/providers/package.json ./packages/providers/
+COPY packages/server/package.json ./packages/server/
+COPY packages/web/package.json ./packages/web/
+COPY packages/workflows/package.json ./packages/workflows/
+# apps/forge must also be present here for production lockfile resolution.
+COPY apps/forge/package.json ./apps/forge/
+
+# Install production dependencies only (--ignore-scripts skips husky prepare hook)
+RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
+
+# Copy application source (Bun runs TypeScript directly, no compile step needed)
 COPY packages/adapters/ ./packages/adapters/
 COPY packages/cli/ ./packages/cli/
 COPY packages/core/ ./packages/core/
@@ -161,11 +163,10 @@ COPY packages/providers/ ./packages/providers/
 COPY packages/server/ ./packages/server/
 COPY packages/workflows/ ./packages/workflows/
 
-# Pre-built web UI from builder stage
-COPY --from=builder /app/packages/web/dist/ ./packages/web/dist/
+# Copy pre-built web UI from build stage
+COPY --from=web-build /app/packages/web/dist/ ./packages/web/dist/
 
-# Config, migrations, and bundled defaults
-COPY package.json bun.lock ./
+# Copy config, migrations, and bundled defaults
 COPY .archon/ ./.archon/
 COPY migrations/ ./migrations/
 # Bundled skill files — packages/core/src/skills/bundled-skill.ts dynamically
@@ -177,7 +178,7 @@ COPY migrations/ ./migrations/
 COPY .claude/ ./.claude/
 COPY tsconfig*.json ./
 
-# Fix permissions for appuser (single chown, not per-COPY)
+# Fix permissions for appuser
 RUN chown -R appuser:appuser /app
 
 # Create .codex directory for Codex authentication
