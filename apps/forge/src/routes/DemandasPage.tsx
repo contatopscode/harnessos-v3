@@ -1,12 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type Demand, type DemandStatus, ApiError } from '../lib/api';
-import { Loader2, Plus, Search, Activity, History } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { api, type Demand, ApiError } from '../lib/api';
+import { Loader2, Plus, Search, Activity, History, Filter, X } from 'lucide-react';
 import { useState } from 'react';
 import type { JSX } from 'react';
 import { cn } from '../lib/cn';
 import { DemandTimelineModal } from '../components/DemandTimelineModal';
 
-const COLUMNS: { status: DemandStatus; label: string; accent: string }[] = [
+const COLUMNS: { status: Demand['status']; label: string; accent: string }[] = [
   { status: 'backlog', label: 'Backlog', accent: 'var(--text-tertiary)' },
   { status: 'triagem', label: 'Triagem / Análise', accent: 'var(--running)' },
   { status: 'requisitos', label: 'Requisitos', accent: 'var(--brand-violet)' },
@@ -18,22 +18,40 @@ const COLUMNS: { status: DemandStatus; label: string; accent: string }[] = [
 ];
 
 export function DemandasPage(): JSX.Element {
-  const qc = useQueryClient();
   const [search, setSearch] = useState('');
+  const [clientId, setClientId] = useState<string>('');
+  const [codebaseId, setCodebaseId] = useState<string>('');
   const [timelineFor, setTimelineFor] = useState<Demand | null>(null);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['forge', 'demands', 'board', search],
-    queryFn: () => api.demands.board({ search: search || undefined }),
+  // Filter source data: clients + projects. Cached so the dropdowns stay
+  // responsive and don't refetch on every board re-render.
+  const { data: clients } = useQuery({
+    queryKey: ['forge', 'clients', 'all'],
+    queryFn: () => api.clients.list(),
+  });
+  const { data: projects } = useQuery({
+    queryKey: ['forge', 'projects', 'all'],
+    queryFn: () => api.projects.list(),
   });
 
-  const moveStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: DemandStatus }) =>
-      api.demands.updateStatus(id, status),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['forge', 'demands'] });
-    },
+  // Available projects for the selected client (so the user can pick
+  // project-after-client without scrolling through every project in the
+  // system). Falls back to all projects when no client is picked.
+  const filteredProjects = clientId
+    ? (projects?.projects ?? []).filter(p => p.client_id === clientId)
+    : (projects?.projects ?? []);
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['forge', 'demands', 'board', search, clientId, codebaseId],
+    queryFn: () =>
+      api.demands.board({
+        search: search || undefined,
+        clientId: clientId || undefined,
+        codebaseId: codebaseId || undefined,
+      }),
   });
+
+  const filtersActive = clientId !== '' || codebaseId !== '' || search !== '';
 
   return (
     <div>
@@ -41,7 +59,8 @@ export function DemandasPage(): JSX.Element {
         <div>
           <h1 className="text-[22px] font-semibold text-[var(--text-primary)]">Demandas</h1>
           <p className="mt-1 text-[12.5px] text-[var(--text-tertiary)]">
-            Board único — cards avançam pelas fases da pipeline.
+            Board somente-leitura — cards avançam pelas fases conforme o Builder trabalha no
+            HarnessOS.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -54,7 +73,7 @@ export function DemandasPage(): JSX.Element {
               onChange={e => {
                 setSearch(e.target.value);
               }}
-              className="w-[260px] rounded-md border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-8 pr-3 text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-magenta)] focus:outline-none"
+              className="w-[220px] rounded-md border border-[var(--border)] bg-[var(--surface)] py-1.5 pl-8 pr-3 text-[12.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-magenta)] focus:outline-none"
             />
           </div>
           <button
@@ -66,6 +85,66 @@ export function DemandasPage(): JSX.Element {
           </button>
         </div>
       </header>
+
+      {/* Filter strip: Cliente + Projeto. Reset button limpa todos os filtros
+          de uma vez — útil quando o board fica vazio após um filtro agressivo. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5">
+        <div className="flex items-center gap-1.5 text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+          <Filter className="h-3.5 w-3.5" aria-hidden />
+          Filtros
+        </div>
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <select
+            value={clientId}
+            onChange={e => {
+              setClientId(e.target.value);
+              // Reset project when the client changes (the old project might
+              // not belong to the new client — keeps the filter consistent).
+              setCodebaseId('');
+            }}
+            className="rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:border-[var(--brand-magenta)] focus:outline-none"
+          >
+            <option value="">Todos os clientes</option>
+            {(clients?.clients ?? []).map(c => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={codebaseId}
+            onChange={e => {
+              setCodebaseId(e.target.value);
+            }}
+            className="rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-[12px] text-[var(--text-primary)] focus:border-[var(--brand-magenta)] focus:outline-none"
+          >
+            <option value="">Todos os projetos</option>
+            {filteredProjects.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {filtersActive && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setClientId('');
+                setCodebaseId('');
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-2 py-1 text-[11px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)]"
+              title="Limpar filtros"
+            >
+              <X className="h-3 w-3" aria-hidden />
+              Limpar
+            </button>
+          )}
+        </div>
+        <div className="text-[11px] text-[var(--text-tertiary)]">
+          {data?.total ?? 0} demanda{data?.total === 1 ? '' : 's'}
+        </div>
+      </div>
 
       {isLoading ? (
         <div className="flex h-64 items-center justify-center gap-2 text-[var(--text-tertiary)]">
@@ -83,9 +162,6 @@ export function DemandasPage(): JSX.Element {
               label={COLUMNS.find(c => c.status === col.status)?.label ?? col.status}
               accent={COLUMNS.find(c => c.status === col.status)?.accent ?? 'var(--text-tertiary)'}
               demands={col.demands}
-              onMove={(id, status) => {
-                moveStatus.mutate({ id, status });
-              }}
               onOpenTimeline={d => {
                 setTimelineFor(d);
               }}
@@ -106,15 +182,14 @@ export function DemandasPage(): JSX.Element {
 }
 
 interface ColumnProps {
-  status: DemandStatus;
+  status: Demand['status'];
   label: string;
   accent: string;
   demands: Demand[];
-  onMove: (id: string, status: DemandStatus) => void;
   onOpenTimeline: (demand: Demand) => void;
 }
 
-function Column({ label, accent, demands, onMove, onOpenTimeline }: ColumnProps): JSX.Element {
+function Column({ label, accent, demands, onOpenTimeline }: ColumnProps): JSX.Element {
   return (
     <div className="flex min-h-[120px] flex-col rounded-[10px] bg-[var(--surface-inset)]/60 p-2">
       <div className="mb-2 flex items-center justify-between px-1.5">
@@ -134,7 +209,7 @@ function Column({ label, accent, demands, onMove, onOpenTimeline }: ColumnProps)
             vazio
           </div>
         ) : (
-          demands.map(d => <Card key={d.id} demand={d} onMove={onMove} onOpenTimeline={onOpenTimeline} />)
+          demands.map(d => <Card key={d.id} demand={d} onOpenTimeline={onOpenTimeline} />)
         )}
       </div>
     </div>
@@ -143,11 +218,10 @@ function Column({ label, accent, demands, onMove, onOpenTimeline }: ColumnProps)
 
 interface CardProps {
   demand: Demand;
-  onMove: (id: string, status: DemandStatus) => void;
   onOpenTimeline: (demand: Demand) => void;
 }
 
-function Card({ demand, onMove, onOpenTimeline }: CardProps): JSX.Element {
+function Card({ demand, onOpenTimeline }: CardProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const priorityColor =
     demand.priority === 'urgente'
@@ -156,6 +230,8 @@ function Card({ demand, onMove, onOpenTimeline }: CardProps): JSX.Element {
         ? 'var(--warning)'
         : 'var(--text-tertiary)';
   const isBlocked = demand.status === 'bloqueada';
+  // FORGE é somente-leitura: status muda no HarnessOS Builder.
+  // O card mostra o estado atual e abre um modal de timeline ao clicar.
   return (
     <div
       onClick={() => {
@@ -163,9 +239,7 @@ function Card({ demand, onMove, onOpenTimeline }: CardProps): JSX.Element {
       }}
       className={cn(
         'group cursor-pointer rounded-md border bg-[var(--surface)] p-2.5 transition hover:border-[var(--border-bright)] hover:bg-[var(--surface-elevated)]',
-        isBlocked
-          ? 'border-[var(--error)]/40 bg-[var(--error-soft)]/30'
-          : 'border-[var(--border)]',
+        isBlocked ? 'border-[var(--error)]/40 bg-[var(--error-soft)]/30' : 'border-[var(--border)]',
         open && 'ring-1 ring-[var(--accent-ring)]'
       )}
     >
@@ -192,9 +266,7 @@ function Card({ demand, onMove, onOpenTimeline }: CardProps): JSX.Element {
           </span>
         )}
         {demand.messages_count > 0 && (
-          <span className="inline-flex items-center gap-0.5">
-            💬 {demand.messages_count}
-          </span>
+          <span className="inline-flex items-center gap-0.5">💬 {demand.messages_count}</span>
         )}
         {demand.last_run_status === 'failed' && (
           <span className="font-medium text-[var(--error)]">último run falhou</span>
@@ -204,22 +276,10 @@ function Card({ demand, onMove, onOpenTimeline }: CardProps): JSX.Element {
         )}
       </div>
       {open && (
-        <div className="mt-2 space-y-1.5 border-t border-[var(--border)] pt-2 text-[10.5px]">
-          <div className="flex flex-wrap gap-1">
-            {COLUMNS.filter(c => c.status !== demand.status).map(c => (
-              <button
-                key={c.status}
-                type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  onMove(demand.id, c.status);
-                }}
-                className="rounded-sm bg-[var(--surface-elevated)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
-              >
-                → {c.label.split(' ')[0]}
-              </button>
-            ))}
-          </div>
+        <div className="mt-2 border-t border-[var(--border)] pt-2 text-[10.5px]">
+          <p className="px-1 pb-1.5 text-[10px] text-[var(--text-tertiary)]">
+            Status controlado pelo Builder no HarnessOS. Abra a timeline para acompanhar.
+          </p>
           <button
             type="button"
             onClick={e => {
