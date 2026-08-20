@@ -27,7 +27,7 @@ const activities = new Hono();
  *
  * For 'status_change' or 'priority_change', the corresponding `to_*` field is required.
  */
-activities.post('/demands/:id/activities', async c => {
+activities.post('/:id/activities', async c => {
   const guard = await requireWebPermission(c, 'admin:users');
   if ('error' in guard) return guard.error;
 
@@ -106,7 +106,7 @@ activities.post('/demands/:id/activities', async c => {
  *
  * Returns the recent activities for a demand (most recent first).
  */
-activities.get('/demands/:id/activities', async c => {
+activities.get('/:id/activities', async c => {
   const guard = await requireWebPermission(c, 'admin:users');
   if ('error' in guard) return guard.error;
   const demandId = c.req.param('id');
