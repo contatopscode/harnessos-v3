@@ -22,6 +22,7 @@ export type DemandStatus =
   | 'requisitos'
   | 'aprovacao_cliente'
   | 'em_andamento'
+  | 'bloqueada' // auto-set when a workflow run fails (migrations/036)
   | 'concluido'
   | 'cancelado';
 
@@ -41,6 +42,12 @@ export interface DemandRow {
   created_by_user_id: string | null;
   created_at: string;
   updated_at: string;
+  // Audit-trail denormalized summary (migrations/036)
+  last_activity_at: string | null;
+  last_run_id: string | null;
+  last_run_status: string | null;
+  runs_count: number;
+  messages_count: number;
 }
 
 function toDemand(row: Record<string, unknown>): DemandRow {
@@ -58,6 +65,11 @@ function toDemand(row: Record<string, unknown>): DemandRow {
     created_by_user_id: nullableStr(row.created_by_user_id),
     created_at: str(row.created_at),
     updated_at: str(row.updated_at),
+    last_activity_at: nullableStr(row.last_activity_at),
+    last_run_id: nullableStr(row.last_run_id),
+    last_run_status: nullableStr(row.last_run_status),
+    runs_count: typeof row.runs_count === 'number' ? row.runs_count : 0,
+    messages_count: typeof row.messages_count === 'number' ? row.messages_count : 0,
   };
 }
 

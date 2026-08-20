@@ -228,6 +228,10 @@ export async function createWorkflowRun(data: {
   working_path?: string;
   parent_conversation_id?: string;
   user_id?: string;
+  // FORGE audit-trail — link the run to a demand so the timeline shows it
+  demand_id?: string;
+  // FORGE audit-trail — origin of the request ('chat' | 'api' | 'cron' | 'auto' | 'manual')
+  triggered_by?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
 }): Promise<WorkflowRun> {
   // Serialize metadata with validation to catch circular references early
   let metadataJson: string;
@@ -262,8 +266,8 @@ export async function createWorkflowRun(data: {
   try {
     const result = await pool.query<WorkflowRun>(
       `INSERT INTO remote_agent_workflow_runs
-       (workflow_name, conversation_id, codebase_id, user_message, metadata, working_path, parent_conversation_id, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (workflow_name, conversation_id, codebase_id, user_message, metadata, working_path, parent_conversation_id, user_id, demand_id, triggered_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
       [
         data.workflow_name,
@@ -274,6 +278,8 @@ export async function createWorkflowRun(data: {
         data.working_path ?? null,
         data.parent_conversation_id ?? null,
         data.user_id ?? null,
+        data.demand_id ?? null,
+        data.triggered_by ?? null,
       ]
     );
     const row = result.rows[0];
@@ -282,7 +288,53 @@ export async function createWorkflowRun(data: {
         `Failed to create workflow run: INSERT returned no rows (workflow: ${data.workflow_name})`
       );
     }
-    return normalizeWorkflowRun(row);
+    const run = normalizeWorkflowRun(row);
+
+    // FORGE audit-trail: if the run is linked to a demand, log a
+    // 'run_started' activity so the kanban timeline shows the run
+    // from the moment it's created, not only when it completes.
+    // Best-effort: never throw out of this hook.
+    if (run.demand_id) {
+      try {
+        const { recordActivity } = await import('./demand-activities');
+        await recordActivity({
+          demandId: run.demand_id,
+          action: 'run_started',
+          runId: run.id,
+          userId: run.user_id ?? null,
+          note: `Run ${run.workflow_name} iniciado`,
+          metadata: {
+            triggered_by: run.triggered_by ?? 'unknown',
+            conversation_id: run.conversation_id,
+            codebase_id: run.codebase_id,
+          },
+        });
+      } catch (hookErr) {
+        getLog().warn(
+          { err: (hookErr as Error).message, runId: run.id, demandId: run.demand_id },
+          'db.workflow_run_run_started_activity_failed'
+        );
+      }
+      // Also bump denormalized counters on the demand.
+      try {
+        const { recordAuditLog } = await import('./audit-log');
+        await recordAuditLog({
+          action: 'demand.updated',
+          entityType: 'demand',
+          entityId: run.demand_id,
+          actorId: run.user_id ?? null,
+          metadata: { event: 'run_started', run_id: run.id, workflow: run.workflow_name },
+          source: 'system',
+        });
+      } catch (hookErr) {
+        getLog().warn(
+          { err: (hookErr as Error).message, runId: run.id },
+          'db.workflow_run_run_started_audit_failed'
+        );
+      }
+    }
+
+    return run;
   } catch (error) {
     const err = error as Error;
     getLog().error({ err }, 'db.workflow_run_create_failed');
@@ -794,6 +846,14 @@ export async function completeWorkflowRun(
     getLog().warn({ workflowRunId: id }, 'db.workflow_run_complete_no_match');
     throw new Error(`Workflow run not found or not in running state (id: ${id})`);
   }
+
+  // Auto-move hook: if this run is linked to a demand, log a
+  // 'run_completed' activity and (if the demand is in an early stage)
+  // move it to 'em_andamento' so the user can see progress without
+  // having to manually advance the kanban card.
+  await moveDemandFromRun(id, 'completed', 'Run concluído com sucesso').catch(err => {
+    getLog().warn({ err: (err as Error).message, runId: id }, 'db.workflow_run_demand_move_failed');
+  });
 }
 
 export async function failWorkflowRun(id: string, error: string): Promise<void> {
@@ -815,6 +875,13 @@ export async function failWorkflowRun(id: string, error: string): Promise<void> 
     getLog().warn({ workflowRunId: id }, 'db.workflow_run_fail_no_match');
     throw new Error(`Workflow run not found or not in running state (id: ${id})`);
   }
+
+  // Auto-move hook: on failure, mark the linked demand as 'bloqueada'
+  // (and log a 'run_failed' activity) so the user sees a red flag in
+  // the kanban and can investigate the timeline.
+  await moveDemandFromRun(id, 'failed', `Run falhou: ${error}`).catch(err => {
+    getLog().warn({ err: (err as Error).message, runId: id }, 'db.workflow_run_demand_move_failed');
+  });
 }
 
 export async function cancelWorkflowRun(id: string): Promise<{ cancelled: boolean }> {
@@ -1320,5 +1387,72 @@ export async function deleteWorkflowRun(id: string): Promise<void> {
     const err = error as Error;
     getLog().error({ err, workflowRunId: id }, 'db.workflow_run_delete_failed');
     throw new Error(`Failed to delete workflow run: ${err.message}`);
+  }
+}
+
+/**
+ * Auto-move hook: when a workflow run finishes (success or failure),
+ * check if it's linked to a demand and:
+ *   1. Log a 'run_completed' / 'run_failed' activity (with run_id link)
+ *   2. If the run succeeded, advance the demand to 'em_andamento'
+ *      (unless it was already in 'aprovacao_cliente' or further along)
+ *   3. If the run failed, set the demand to 'bloqueada'
+ *
+ * Single source of truth for "this demand is blocked because run X
+ * failed" — the user sees the red badge in the kanban and the full
+ * failure reason in the timeline.
+ */
+async function moveDemandFromRun(
+  runId: string,
+  outcome: 'completed' | 'failed',
+  note: string
+): Promise<void> {
+  // Look up the demand_id from the run
+  const runRow = await pool.query<{ demand_id: string | null }>(
+    'SELECT demand_id FROM remote_agent_workflow_runs WHERE id = $1',
+    [runId]
+  );
+  const demandId = runRow.rows[0]?.demand_id;
+  if (!demandId) return; // run not linked to any demand — no-op
+
+  // Log the activity (bump the runs_count + last_run_id counters)
+  // (using the activity table also ensures the kanban counters
+  // are kept in sync)
+  const { recordActivity, changeDemandStatus } = await import('./demand-activities');
+  await recordActivity({
+    demandId,
+    action: outcome === 'completed' ? 'run_completed' : 'run_failed',
+    runId,
+    note,
+    metadata: { source: 'auto_workflow_run', outcome },
+  });
+
+  if (outcome === 'completed') {
+    // Only advance from earlier stages; never move a demand BACKWARD
+    const current = await pool.query<{ status: string }>(
+      'SELECT status FROM remote_agent_demands WHERE id = $1',
+      [demandId]
+    );
+    const currentStatus = current.rows[0]?.status;
+    if (
+      currentStatus === 'backlog' ||
+      currentStatus === 'triagem' ||
+      currentStatus === 'requisitos'
+    ) {
+      await changeDemandStatus({
+        demandId,
+        toStatus: 'em_andamento',
+        source: 'auto_run_success',
+        note: 'Avançado automaticamente: run concluído com sucesso',
+      });
+    }
+  } else {
+    // failed → bloqueada
+    await changeDemandStatus({
+      demandId,
+      toStatus: 'bloqueada',
+      source: 'auto_run_failed',
+      note,
+    });
   }
 }

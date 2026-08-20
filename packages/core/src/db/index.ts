@@ -32,6 +32,9 @@ export * as forgeCostDb from './costs';
 export * as forgeDemandPipelineLinkDb from './demand-pipeline-links';
 export * as forgeProjectDb from './projects';
 
+// Global audit log (FORGE sprint — "tudo, absolutamente tudo")
+export * as auditLogDb from './audit-log';
+
 // Also export individual functions for direct imports
 export * from './conversations';
 export * from './codebases';
@@ -48,5 +51,7 @@ export * from './demands';
 export * from './sprints';
 export * from './oss';
 export * from './costs';
+export * from './audit-log';
 export * from './demand-pipeline-links';
+export * from './demand-activities';
 export * from './projects';

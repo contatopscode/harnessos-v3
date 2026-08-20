@@ -68,6 +68,7 @@ export const demandStatusSchema = z.enum([
   'requisitos',
   'aprovacao_cliente',
   'em_andamento',
+  'bloqueada', // auto-set when a workflow run fails
   'concluido',
   'cancelado',
 ]);
@@ -90,6 +91,13 @@ export const demandRowSchema = z.object({
   created_by_user_id: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  // Audit-trail "last activity" summary — populated by triggers/hooks so
+  // the kanban can show "last touched" without joining activities table.
+  last_activity_at: z.string().nullable(),
+  last_run_id: z.string().nullable(),
+  last_run_status: z.string().nullable(),
+  runs_count: z.number().int(),
+  messages_count: z.number().int(),
 });
 export type Demand = z.infer<typeof demandRowSchema>;
 
@@ -330,3 +338,105 @@ export const demandBoardSchema = z.object({
   total: z.number().int(),
 });
 export type DemandBoard = z.infer<typeof demandBoardSchema>;
+
+// ---------------------------------------------------------------------------
+// Demand activity — audit trail row
+// ---------------------------------------------------------------------------
+
+/**
+ * An activity is any auditable event that touches a demand: a status
+ * change, a workflow run starting/completing/failing, a chat message
+ * linked to the demand, or a manual note from a human.
+ *
+ * Single source of truth for "what happened to this demand and when".
+ * The kanban UI renders the timeline of activities inside the demand
+ * detail modal; the Custos page shows activities tagged 'message' and
+ * 'run_completed' alongside the cost rows.
+ */
+export const demandActivityActionSchema = z.enum([
+  'created', // demand was just created
+  'status_change', // explicit status transition (manual or auto)
+  'priority_change', // priority was changed
+  'run_started', // a workflow run linked to this demand started
+  'run_completed', // a workflow run linked to this demand succeeded
+  'run_failed', // a workflow run linked to this demand failed
+  'message', // a chat message (FORGE) linked to this demand
+  'note', // a human added a note
+]);
+export type DemandActivityAction = z.infer<typeof demandActivityActionSchema>;
+
+export const demandActivityRowSchema = z.object({
+  id: z.string(),
+  demand_id: z.string(),
+  action: demandActivityActionSchema,
+  from_status: z.string().nullable(),
+  to_status: z.string().nullable(),
+  from_priority: z.string().nullable(),
+  to_priority: z.string().nullable(),
+  run_id: z.string().nullable(),
+  message_id: z.string().nullable(),
+  user_id: z.string().nullable(),
+  note: z.string().nullable(),
+  metadata: z.record(z.string(), z.unknown()),
+  created_at: z.string(),
+});
+export type DemandActivity = z.infer<typeof demandActivityRowSchema>;
+
+/** Body of POST /api/forge/demands/:id/activities — manual activity log. */
+export const createDemandActivityBodySchema = z
+  .object({
+    action: z.enum(['note', 'status_change', 'priority_change']).default('note'),
+    note: z.string().min(1).max(8000),
+    to_status: demandStatusSchema.optional(),
+    to_priority: demandPrioritySchema.optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  })
+  .openapi('CreateDemandActivityBody');
+
+/**
+ * Aggregated demand timeline — what's been happening to a demand.
+ * Combines:
+ *   - activities (status changes, run start/end, messages, notes)
+ *   - workflow runs (just the latest ones; full list in another endpoint)
+ *   - cost rows (LLM calls attributed to this demand)
+ *   - chat messages (FORGE messages that mention/link this demand)
+ */
+export const demandTimelineEntrySchema = z.object({
+  // One of 'activity' | 'run' | 'cost' | 'message' — discriminated union
+  kind: z.enum(['activity', 'run', 'cost', 'message']),
+  at: z.string(), // ISO timestamp (created_at or run start)
+  title: z.string(),
+  detail: z.string().nullable(),
+  // The full underlying row (matched to the kind)
+  activity: demandActivityRowSchema.optional(),
+  // The run id (if kind=run)
+  run_id: z.string().optional(),
+  run_status: z.string().optional(),
+  run_workflow_name: z.string().optional(),
+  // The cost (if kind=cost)
+  cost_id: z.string().optional(),
+  cost_model: z.string().optional(),
+  cost_tokens_in: z.number().int().optional(),
+  cost_tokens_out: z.number().int().optional(),
+  cost_amount_usd: z.number().optional(),
+  cost_amount_brl: z.number().optional(),
+  // The message (if kind=message)
+  message_id: z.string().optional(),
+  message_role: z.string().optional(),
+  message_preview: z.string().optional(),
+});
+export type DemandTimelineEntry = z.infer<typeof demandTimelineEntrySchema>;
+
+export const demandTimelineResponseSchema = z.object({
+  demand: demandRowSchema,
+  entries: z.array(demandTimelineEntrySchema),
+  totals: z.object({
+    activities: z.number().int(),
+    runs: z.number().int(),
+    cost_calls: z.number().int(),
+    cost_total_usd: z.number(),
+    cost_total_brl: z.number(),
+    messages: z.number().int(),
+  }),
+});
+export type DemandTimelineResponse = z.infer<typeof demandTimelineResponseSchema>;

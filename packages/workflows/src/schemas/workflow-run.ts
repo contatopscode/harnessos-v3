@@ -121,6 +121,14 @@ export const workflowRunSchema = z.object({
   last_activity_at: z.date().nullable(),
   working_path: z.string().nullable(),
   user_id: z.string().nullable(),
+  // FORGE integration: links a run to a demand (m:1). When set, the
+  // demand_activities table gets a 'run_started' row at creation and
+  // 'run_completed'/'run_failed' rows at terminal status. Nullable so
+  // legacy / non-FORGE runs keep validating.
+  demand_id: z.string().nullable().optional(),
+  // FORGE integration: 'chat' | 'api' | 'cron' | 'auto' | 'manual' —
+  // source of the run request. Nullable for legacy rows.
+  triggered_by: z.string().nullable().optional(),
 });
 
 export type WorkflowRun = z.infer<typeof workflowRunSchema>;

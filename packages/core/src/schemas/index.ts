@@ -120,6 +120,26 @@ export type {
   ListMemoriesQuery,
 } from './memory';
 
+// Global audit log (FORGE sprint, 19/ago/2026 — "tudo, absolutamente tudo")
+export {
+  auditLogActionSchema,
+  auditLogSourceSchema,
+  auditLogRowSchema,
+  recordAuditLogInputSchema,
+  listAuditLogOptionsSchema,
+  listAuditLogResponseSchema,
+  entityAuditLogResponseSchema,
+} from './audit-log';
+export type {
+  AuditLogAction,
+  AuditLogSource,
+  AuditLogRow,
+  RecordAuditLogInput,
+  ListAuditLogOptions,
+  ListAuditLogResponse,
+  EntityAuditLogResponse,
+} from './audit-log';
+
 // VOLUND FORGE — PMO surface
 export {
   clientStatusSchema,
@@ -148,6 +168,11 @@ export {
   projectSummarySchema,
   demandBoardColumnSchema,
   demandBoardSchema,
+  demandActivityActionSchema,
+  demandActivityRowSchema,
+  createDemandActivityBodySchema,
+  demandTimelineEntrySchema,
+  demandTimelineResponseSchema,
 } from './forge';
 export type {
   ClientStatus,
@@ -165,4 +190,8 @@ export type {
   CostBreakdown,
   ProjectSummary,
   DemandBoard,
+  DemandActivityAction,
+  DemandActivity,
+  DemandTimelineEntry,
+  DemandTimelineResponse,
 } from './forge';
