@@ -1252,3 +1252,11 @@ CREATE INDEX IF NOT EXISTS idx_users_last_login_at
 
 ALTER TABLE remote_agent_workflow_runs
   ADD COLUMN IF NOT EXISTS triggered_by VARCHAR(32);
+
+-- ============================================================================
+-- 038: costs.metadata (forja UX: chat persistAssistantTurn needs JSONB
+--     blob to record latency_ms + source. Migration 034 missed it; 036
+--     added message_id/conversation_id but still missed metadata.)
+-- ============================================================================
+ALTER TABLE remote_agent_costs
+  ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
