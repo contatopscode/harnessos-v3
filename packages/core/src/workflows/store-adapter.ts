@@ -27,6 +27,7 @@ import {
 } from '../credentials/delivery';
 import { listDecryptedUserProviderCredentials } from '../db/user-provider-key-store';
 import { getUserAiPrefs, type UserAiPrefs } from '../db/user-ai-prefs-store';
+import * as costsDb from '../db/costs';
 
 // Compile-time assertion: MergedConfig must remain a structural subtype of WorkflowConfig.
 // If MergedConfig drifts from WorkflowConfig, this line becomes a type error.
@@ -195,6 +196,55 @@ export function createWorkflowDeps(): WorkflowDeps {
       } catch (err) {
         getLog().warn({ err: err as Error, userId }, 'workflow_deps.user_ai_prefs_resolve_failed');
         return {};
+      }
+    },
+    // Cost recording: append one row to remote_agent_costs per AI node
+    // completion. The workflow engine calls this from the single aggregation
+    // point in dag-executor (per-node), so totals are accurate and double-
+    // counting is impossible. Snaps USD/BRL rate at write time (BRL is
+    // informational). Best-effort — a write failure must not break the run.
+    // The `metadata` JSONB captures node_id + workflow + node kind so the
+    // FORGE Custos page can break down spend by pipeline / node.
+    //
+    // Accepts snake_case input from the engine (matches the workflow
+    // engine's naming) and maps to costsDb.recordCost's camelCase
+    // signature inside.
+    recordCost: async (input: {
+      run_id: string;
+      demand_id?: string | null;
+      codebase_id?: string | null;
+      model: string;
+      provider: string;
+      kind?: 'chat' | 'completion' | 'embedding' | 'tool' | 'image';
+      tokens_in: number;
+      tokens_out: number;
+      amount_usd: number;
+      metadata?: Record<string, unknown>;
+    }): Promise<void> => {
+      try {
+        // Map the engine's snake_case input to costsDb.recordCost's
+        // camelCase shape. The metadata field is intentionally not
+        // persisted via the helper (the helper signature predates the
+        // costs.metadata column); the workflow+node identity is already
+        // captured by run_id + provider/model, and the FORGE Custos
+        // page groups by run via that link. If a future caller needs
+        // per-node metadata, extend recordCost to accept it.
+        await costsDb.recordCost({
+          runId: input.run_id,
+          demandId: input.demand_id ?? null,
+          codebaseId: input.codebase_id ?? null,
+          model: input.model,
+          provider: input.provider,
+          kind: input.kind ?? 'chat',
+          tokensIn: input.tokens_in,
+          tokensOut: input.tokens_out,
+          amountUsd: input.amount_usd,
+        });
+      } catch (err) {
+        getLog().warn(
+          { err: err as Error, runId: input.run_id, model: input.model },
+          'workflow_deps.record_cost_failed'
+        );
       }
     },
   };

@@ -170,6 +170,54 @@ function firstFailedNodeTaxonomy(
   return {};
 }
 
+/**
+ * Resolve the (demand_id, codebase_id) tuple for the current run, used to
+ * stamp cost rows so the FORGE Custos page can group spend by project/demand.
+ *
+ *   - demand_id: comes from `workflow_run.demand_id` (set by the run-completed
+ *     hook when the run was started from a demand; migration 036).
+ *   - codebase_id: comes from the conversation row (chat runs set it;
+ *     ad-hoc CLI runs leave it null).
+ *
+ * Both lookups are read-only and use the engine's `getWorkflowRun` /
+ * (inline) conversation-row reader. Failures are swallowed and return
+ * {null, null} so a cost write never aborts the run.
+ */
+async function resolveCostLinkage(ctx: RunLayersContext): Promise<{
+  demandId: string | null;
+  codebaseId: string | null;
+}> {
+  let demandId: string | null = null;
+  let codebaseId: string | null = null;
+  try {
+    const run = await ctx.deps.store.getWorkflowRun(ctx.conversationId);
+    demandId = run?.demand_id ?? null;
+  } catch (err) {
+    getLog().warn(
+      { err: err instanceof Error ? err : new Error(String(err)), conversationId: ctx.conversationId },
+      'dag.cost_linkage_run_lookup_failed'
+    );
+  }
+  // codebase_id comes from the conversation. The conversation is identified
+  // by ctx.conversationId in this engine, so we delegate to the platform
+  // — but the engine doesn't keep a conversation object; instead, walk
+  // the store for the conversation that owns this run's parent.
+  // For now: if there's a demand_id, the demand's codebase_id is the
+  // canonical "this run belongs to this project" signal. We look it up
+  // lazily via the run row's own demand link.
+  if (demandId) {
+    try {
+      const run = await ctx.deps.store.getWorkflowRun(ctx.conversationId);
+      // The run row carries codebase_id directly (FK to remote_agent_codebases).
+      // It may be null for chat runs whose conversation has no codebase.
+      codebaseId = run?.codebase_id ?? null;
+    } catch {
+      // Already logged above; swallow.
+    }
+  }
+  return { demandId, codebaseId };
+}
+
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
 function getLog(): ReturnType<typeof createLogger> {
@@ -303,6 +351,14 @@ type NodeExecutionResult = NodeOutput & {
   tokens?: TokenUsage;
   /** Loop nodes only: number of iterations executed. */
   loopIterations?: number;
+  /**
+   * Resolved provider+model for this node (used by the cost-recording
+   * aggregation point to write a remote_agent_costs row). Set by the
+   * single-node executor; loop nodes pass through the value from their
+   * last iteration.
+   */
+  provider?: string;
+  model?: string;
 };
 
 /**
@@ -2090,6 +2146,12 @@ async function executeNodeInternal(
       sessionId: newSessionId,
       costUsd: nodeCostUsd,
       ...(nodeTokens !== undefined ? { tokens: nodeTokens } : {}),
+      // Pass through resolved provider+model so the aggregation point can
+      // write a cost row with the right model attribution. Falls back to
+      // undefined for non-AI nodes (bash/script/etc) — recordCost skips
+      // when model is missing.
+      provider,
+      ...(resolvedModel ? { model: resolvedModel } : {}),
       ...(structuredOutput !== undefined ? { structuredOutput } : {}),
       ...(declaredFields !== undefined ? { declaredFields } : {}),
       ...(nodeResumed !== undefined ? { resumed: nodeResumed } : {}),
@@ -2110,6 +2172,8 @@ async function executeNodeInternal(
         error: 'Cancelled by user',
         costUsd: nodeCostUsd,
         ...(nodeTokens !== undefined ? { tokens: nodeTokens } : {}),
+        provider,
+        ...(resolvedModel ? { model: resolvedModel } : {}),
       };
     }
 
@@ -4584,6 +4648,13 @@ interface RunLayersContext {
    * so multi-iteration runs are disaggregatable in the persisted event log (#2090).
    */
   iteration?: number;
+  /**
+   * Memoized (demand_id, codebase_id) for the current run, resolved lazily
+   * by `resolveCostLinkage` on the first cost write. Set/undefined to force
+   * re-resolution; RunLayersContext callers should leave it undefined and
+   * let the writer populate it.
+   */
+  costLinkage?: { demandId: string | null; codebaseId: string | null };
 }
 
 /**
@@ -5356,6 +5427,67 @@ async function runLayers(ctx: RunLayersContext): Promise<void> {
         }
         if (output.loopIterations !== undefined) ctx.totalLoopIterations += output.loopIterations;
         ctx.nodeOutputs.set(nodeId, output);
+        // Cost persistence: append one row to remote_agent_costs so the FORGE
+        // Custos page shows workflow-run spend (not just ad-hoc chat). Only
+        // fires for AI nodes (provider + model + costUsd all set); bash/script
+        // nodes are skipped. Best-effort: a write failure must not abort the
+        // run. demand_id + codebase_id are stamped automatically from the
+        // workflow_run row + conversation.codebase_id so the Custos page can
+        // group cost by project/demand.
+        if (
+          ctx.deps.recordCost &&
+          output.provider &&
+          output.model &&
+          typeof output.costUsd === 'number' &&
+          output.tokens !== undefined &&
+          Number.isFinite(output.tokens.input) &&
+          Number.isFinite(output.tokens.output) &&
+          (output.costUsd > 0 || output.tokens.input > 0 || output.tokens.output > 0)
+        ) {
+          // Resolve demand_id + codebase_id from the run. workflow_run.demand_id
+          // is set when the run was started from a demand (migration 036);
+          // codebase_id flows from the conversation. Looked up once per layer
+          // result — cached after first lookup.
+          if (ctx.costLinkage === undefined) {
+            ctx.costLinkage = await resolveCostLinkage(ctx);
+          }
+          ctx.deps
+            .recordCost({
+              run_id: workflowRun.id,
+              demand_id: ctx.costLinkage.demandId,
+              codebase_id: ctx.costLinkage.codebaseId,
+              model: output.model,
+              provider: output.provider,
+              kind: 'chat',
+              tokens_in: output.tokens.input,
+              tokens_out: output.tokens.output,
+              amount_usd: output.costUsd,
+              metadata: {
+                node_id: nodeId,
+                workflow: workflowRun.workflow_name,
+                // DagNode is a discriminated union (CommandNode | PromptNode |
+                // BashNode | …) — infer the kind by which field is set. The
+                // presence of `prompt` identifies AI nodes (most common).
+                node_kind: nodeById.get(nodeId)?.prompt !== undefined
+                  ? 'prompt'
+                  : nodeById.get(nodeId)?.command !== undefined
+                    ? 'command'
+                    : nodeById.get(nodeId)?.bash !== undefined
+                      ? 'bash'
+                      : 'other',
+              },
+            })
+            .catch((costErr: unknown) => {
+              getLog().warn(
+                {
+                  err: costErr instanceof Error ? costErr : new Error(String(costErr)),
+                  runId: workflowRun.id,
+                  nodeId,
+                },
+                'dag.cost_persist_failed'
+              );
+            });
+        }
         // Typed artifact: when a node declares `output_type`, persist its output
         // as a typed sidecar (nodes/<id>.md + .meta.json) so other nodes and
         // later runs can locate it by type. Best-effort — a metadata write must

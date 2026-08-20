@@ -153,6 +153,31 @@ export interface WorkflowDeps {
    */
   isPerUserProviderKeysEnabled?: () => boolean;
   /**
+   * Optional: append a row to `remote_agent_costs` for one AI turn of a
+   * workflow run. Threaded through deps so the workflow engine stays free
+   * of @archon/core DB knowledge — the canonical implementation in
+   * @archon/core/src/db/costs.recordCost satisfies the contract structurally.
+   *
+   * Called once per node completion (single-aggregation point in dag-executor,
+   * not per chunk). Best-effort semantics — a write failure must never break
+   * the workflow. The function itself swallows errors and logs them.
+   *
+   * When absent, the engine simply doesn't record costs (legacy behavior).
+   * The FORGE Custos page then shows only ad-hoc chat costs.
+   */
+  recordCost?: (input: {
+    run_id: string;
+    demand_id?: string | null;
+    codebase_id?: string | null;
+    model: string;
+    provider: string;
+    kind?: 'chat' | 'completion' | 'embedding' | 'tool' | 'image';
+    tokens_in: number;
+    tokens_out: number;
+    amount_usd: number;
+    metadata?: Record<string, unknown>;
+  }) => Promise<void>;
+  /**
    * Optional: resolve every connected provider credential for a user into a
    * delivery bag (env vars + files to write under `artifactsDir`). Called
    * once per run from `executeWorkflow`. Implementations own the delivery
