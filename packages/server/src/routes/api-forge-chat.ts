@@ -204,6 +204,11 @@ interface PersistArgs {
 /**
  * Persist the assistant message + the cost row + a demand activity
  * (if the conversation is linked to a codebase that has active demands).
+ *
+ * Lookup order: cost row + activity are both tagged with the same
+ * `demand_id` (the active demand for this codebase) so the FORGE
+ * timeline can show them together and the Custos dashboard can group
+ * cost rows by demand.
  */
 async function persistAssistantTurn(args: PersistArgs): Promise<void> {
   // 1. Insert the assistant message
@@ -221,41 +226,11 @@ async function persistAssistantTurn(args: PersistArgs): Promise<void> {
   );
   const assistantMessageId = assistantMsg.rows[0].id;
 
-  // 2. Insert a cost row linked to both the assistant message and
-  //    the conversation. We re-derive the cost from the tokens (M3 is
-  //    $0.50/M input, $1.50/M output — see PSG.7 do Sinapse for the
-  //    same pattern; update if the M3 pricing changes).
-  const usdBrlRate = Number(process.env.USD_BRL_RATE ?? '5.0');
-  const usdIn = (args.tokensIn / 1_000_000) * 0.5;
-  const usdOut = (args.tokensOut / 1_000_000) * 1.5;
-  const amountUsd = usdIn + usdOut;
-  const amountBrl = amountUsd * usdBrlRate;
-  await pool.query(
-    `INSERT INTO remote_agent_costs
-       (model, provider, kind, tokens_in, tokens_out, amount_usd, usd_brl_rate, amount_brl,
-        codebase_id, message_id, conversation_id, metadata)
-     VALUES ($1, $2, 'chat', $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
-    [
-      args.model,
-      'minimax',
-      args.tokensIn,
-      args.tokensOut,
-      amountUsd,
-      usdBrlRate,
-      amountBrl,
-      args.codebaseId,
-      assistantMessageId,
-      args.conversationId,
-      JSON.stringify({ latency_ms: args.latencyMs, source: 'forge_chat' }),
-    ]
-  );
-
-  // 3. If this conversation is linked to a codebase, find the
-  //    active demand for that codebase (the one currently in
-  //    em_andamento, or the most recent non-concluido one) and log a
-  //    'message' activity on it. This is what the user sees in the
-  //    timeline: "the user asked X to the FORGE agent while this
-  //    demand was being worked on".
+  // 2. Resolve the active demand for this codebase (used by both
+  //    the cost row and the activity). Null when no codebase scope
+  //    or no active demand — both rows are still inserted, just
+  //    with demand_id = null.
+  let demandId: string | null = null;
   if (args.codebaseId) {
     const demandRow = await pool.query<{ id: string }>(
       `SELECT id FROM remote_agent_demands
@@ -276,22 +251,58 @@ async function persistAssistantTurn(args: PersistArgs): Promise<void> {
       [args.codebaseId]
     );
     if (demandRow.rowCount && demandRow.rowCount > 0) {
-      const demandId = demandRow.rows[0].id;
-      await recordActivity({
-        demandId,
-        action: 'message',
-        userId: args.userId,
-        messageId: assistantMessageId,
-        note: `Mensagem do chat: ${truncate(args.reply, 200)}`,
-        metadata: {
-          conversation_id: args.conversationId,
-          message_role: 'assistant',
-          tokens_in: args.tokensIn,
-          tokens_out: args.tokensOut,
-          model: args.model,
-        },
-      });
+      demandId = demandRow.rows[0].id;
     }
+  }
+
+  // 3. Insert a cost row linked to the assistant message, the
+  //    conversation, AND the active demand. M3 pricing: $0.50/M
+  //    input, $1.50/M output (see PSG.7 do Sinapse for the same
+  //    pattern; update if M3 pricing changes).
+  const usdBrlRate = Number(process.env.USD_BRL_RATE ?? '5.0');
+  const usdIn = (args.tokensIn / 1_000_000) * 0.5;
+  const usdOut = (args.tokensOut / 1_000_000) * 1.5;
+  const amountUsd = usdIn + usdOut;
+  const amountBrl = amountUsd * usdBrlRate;
+  await pool.query(
+    `INSERT INTO remote_agent_costs
+       (model, provider, kind, tokens_in, tokens_out, amount_usd, usd_brl_rate, amount_brl,
+        codebase_id, demand_id, message_id, conversation_id, metadata)
+     VALUES ($1, $2, 'chat', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)`,
+    [
+      args.model,
+      'minimax',
+      args.tokensIn,
+      args.tokensOut,
+      amountUsd,
+      usdBrlRate,
+      amountBrl,
+      args.codebaseId,
+      demandId,
+      assistantMessageId,
+      args.conversationId,
+      JSON.stringify({ latency_ms: args.latencyMs, source: 'forge_chat' }),
+    ]
+  );
+
+  // 4. If we have an active demand, log a 'message' activity so the
+  //    kanban timeline shows: "the user asked X to the FORGE agent
+  //    while this demand was being worked on".
+  if (demandId) {
+    await recordActivity({
+      demandId,
+      action: 'message',
+      userId: args.userId,
+      messageId: assistantMessageId,
+      note: `Mensagem do chat: ${truncate(args.reply, 200)}`,
+      metadata: {
+        conversation_id: args.conversationId,
+        message_role: 'assistant',
+        tokens_in: args.tokensIn,
+        tokens_out: args.tokensOut,
+        model: args.model,
+      },
+    });
   }
 }
 

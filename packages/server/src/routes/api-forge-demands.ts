@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as demandsDb from '@archon/core/db/demands';
 import { recordAuditLog } from '@archon/core/db/audit-log';
+import { changeDemandStatus } from '@archon/core/db/demand-activities';
 import {
   createDemandBodySchema,
   updateDemandBodySchema,
@@ -157,15 +158,26 @@ demands.patch('/:id/status', async c => {
   if (!parsed.success) {
     return apiError(c, 400, 'Invalid status body', parsed.error.message);
   }
-  const updated = await demandsDb.updateDemand(id, { status: parsed.data.status });
-  if (!updated) return apiError(c, 404, 'Demand not found');
-  // Audit: demand.updated (status_change is a special case)
+  // Use changeDemandStatus so we ALSO log a demand_activities row
+  // (the kanban timeline shows status changes; the audit_log captures
+  // the same event for the global view). Returns null on demand-not-found.
+  const activity = await changeDemandStatus({
+    demandId: id,
+    toStatus: parsed.data.status,
+    userId: guard.userId,
+    source: 'manual',
+    note: undefined,
+  });
+  if (!activity) return apiError(c, 404, 'Demand not found');
+  // Re-fetch so the client sees the canonical row
+  const updated = await demandsDb.getDemandById(id);
+  // Audit: demand.updated (mirror the activity in the global log too)
   await recordAuditLog({
     action: 'demand.updated',
     entityType: 'demand',
     entityId: id,
     actorId: guard.userId,
-    metadata: { status_change: parsed.data.status },
+    metadata: { status_change: parsed.data.status, from: activity.from_status, to: parsed.data.status },
   });
   return c.json({ demand: updated });
 });
