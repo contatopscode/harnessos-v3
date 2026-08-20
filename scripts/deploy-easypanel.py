@@ -53,8 +53,34 @@ def main():
 
     print(f"=== deploying {service} (target sha {expected}) ===")
 
-    # 1. updateBuild forces Easypanel to re-poll GitHub
-    r = post(f"services.app.updateBuild", {"projectName": PROJECT, "serviceName": service})
+    # 0. Read the current build config from inspect — Easypanel's
+    #    `updateBuild` mutation RESETS the build to `{}` if called
+    #    without a body, so we must echo the existing config back or
+    #    the next deployService call will 400 ("Invalid source").
+    inspect = post(
+        f"services.app.inspectService",
+        {"projectName": PROJECT, "serviceName": service},
+    )
+    current_build = ((inspect.get("json") or {}).get("build")) or {}
+    if not current_build:
+        # No build configured — bail and let the operator set one
+        # manually (Easypanel can't infer the dockerfile path from a
+        # git source).
+        print(
+            f"!! {service} has no build config (build={json.dumps(current_build)}). "
+            "Set one in the Easypanel UI or via updateBuild({build:{type:'dockerfile',file:'...'}}) first."
+        )
+        sys.exit(3)
+    print(f"preserving build config: {json.dumps(current_build)[:200]}")
+
+    # 1. updateBuild with the EXISTING config — this nudges Easypanel
+    #    to re-poll GitHub for a fresh commit hash. Without a build
+    #    body, Easypanel resets the build to {} and the next deploy
+    #    400s with "Invalid source".
+    r = post(
+        f"services.app.updateBuild",
+        {"projectName": PROJECT, "serviceName": service, "build": current_build},
+    )
     print(f"updateBuild: {json.dumps(r)[:200]}")
     time.sleep(3)
 
