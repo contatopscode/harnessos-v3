@@ -7,6 +7,7 @@ import {
   PenTool,
   Brain,
   ShieldCheck,
+  History,
   type LucideIcon,
 } from 'lucide-react';
 import { ProjectRow } from './ProjectRow';
@@ -351,6 +352,12 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
           icon={ShieldCheck}
           label="Gestão de Usuários"
           title="Gestão de Usuários · RBAC ( u )"
+        />
+        <RailNavLink
+          to="/console/admin/audit"
+          icon={History}
+          label="Audit Log"
+          title="Audit Log ( a ) — tudo, absolutamente tudo"
         />
         <RailNavLink
           to="/legacy/workflows"

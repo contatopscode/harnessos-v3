@@ -76,8 +76,9 @@ def main():
         if "_error" in r:
             print(f"  inspect error: {r}")
             continue
-        result = r.get("result", {}).get("data", {}).get("json", {})
-        sha = (result.get("commit") or {}).get("sha", "?")
+        # Response shape: { "json": { ..., "commit": { "hash": "...", "message": "..." } } }
+        result = r.get("json", {})
+        sha = (result.get("commit") or {}).get("hash", "?")
         sha7 = sha[:7] if sha and sha != "?" else "?"
         if sha7 != last_sha:
             print(f"  sha: {sha7}  ({'✓' if sha7.startswith(expected) else '…'})")

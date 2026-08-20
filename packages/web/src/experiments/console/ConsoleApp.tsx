@@ -13,6 +13,7 @@ import { SettingsPage } from './routes/SettingsPage';
 import { AgentsPage } from './routes/AgentsPage';
 import { MemoryPage } from './routes/MemoryPage';
 import { RbacAdminPage } from './routes/RbacAdminPage';
+import { AuditLogPage } from './routes/AuditLogPage';
 import { invalidate } from './store/cache';
 import { K } from './store/keys';
 import { useKeymap, type Binding } from './lib/keymap';
@@ -101,6 +102,7 @@ export function ConsoleApp(): ReactElement {
             <Route path="agents" element={<AgentsPage />} />
             <Route path="memory" element={<MemoryPage />} />
             <Route path="admin/rbac" element={<RbacAdminPage />} />
+            <Route path="admin/audit" element={<AuditLogPage />} />
             <Route path="builder" element={<BuilderRoute />} />
             <Route path="_preview" element={<PreviewPage />} />
             <Route path="p/:projectId" element={<RunsPage />} />
