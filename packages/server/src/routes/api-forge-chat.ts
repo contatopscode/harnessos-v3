@@ -25,7 +25,11 @@ import { pool } from '@archon/core/db/connection';
 import * as projectsDb from '@archon/core/db/projects';
 import * as clientsDb from '@archon/core/db/clients';
 import * as demandsDb from '@archon/core/db/demands';
-import { recordActivity, listActivitiesForDemand, changeDemandStatus } from '@archon/core/db/demand-activities';
+import {
+  recordActivity,
+  listActivitiesForDemand,
+  changeDemandStatus,
+} from '@archon/core/db/demand-activities';
 import { createLogger } from '@archon/paths';
 
 const log = createLogger('forge.chat');
@@ -40,7 +44,7 @@ const chatBodySchema = z
   })
   .openapi('ForgeChatBody');
 
-type ApiErrorStatus = 400 | 401 | 502 | 503;
+type ApiErrorStatus = 400 | 401 | 403 | 404 | 502 | 503;
 
 function apiError(
   c: { json: (data: unknown, status?: number) => Response },
@@ -131,7 +135,10 @@ chat.post('/', async c => {
           { role: 'user', name: 'user', content: message },
         ],
         temperature: 0.3,
-        max_tokens: 1024,
+        // 4096 matches chat-tier defaults for M3 / Claude-style models and
+        // gives long project summaries (clients + demands) room to finish
+        // without truncation. 1024 was cutting off multi-paragraph answers.
+        max_tokens: 4096,
       }),
     });
     if (!resp.ok) {
@@ -144,8 +151,12 @@ chat.post('/', async c => {
     };
     reply = data.choices?.[0]?.message?.content?.trim() ?? '';
     const usage = data.usage ?? {};
-    const tokensIn = typeof usage.prompt_tokens === 'number' ? usage.prompt_tokens : approxTokens(systemPrompt + message);
-    const tokensOut = typeof usage.completion_tokens === 'number' ? usage.completion_tokens : approxTokens(reply);
+    const tokensIn =
+      typeof usage.prompt_tokens === 'number'
+        ? usage.prompt_tokens
+        : approxTokens(systemPrompt + message);
+    const tokensOut =
+      typeof usage.completion_tokens === 'number' ? usage.completion_tokens : approxTokens(reply);
 
     // 5. Persist the ASSISTANT message + link to the cost row + log
     //    activities. All best-effort (don't fail the response if a
@@ -182,6 +193,71 @@ chat.post('/', async c => {
     },
     conversation_id: conversationId,
     user_message_id: userMessageId,
+  });
+});
+
+/**
+ * GET /api/forge/chat/conversations/:id/messages
+ *
+ * Hydrate the chat history for a saved conversation — used by the FORGE
+ * ChatPage on mount to re-populate the message list after a page reload
+ * (or first visit). The same conversation_id round-trips through
+ * localStorage so the user always resumes the same thread.
+ *
+ * `limit` defaults to 200, max 1000. Messages are returned in ASCENDING
+ * created_at order so the caller can render them top-to-bottom without
+ * re-sorting. The metadata JSONB column is included (model, latency_ms,
+ * source) so the assistant bubbles can still show their per-message
+ * provenance hint.
+ */
+chat.get('/conversations/:id/messages', async c => {
+  const guard = await requireWebPermission(c, 'admin:users');
+  if ('error' in guard) return guard.error;
+  const id = c.req.param('id');
+
+  // Validate conversation exists + belongs to this user (defense-in-depth:
+  // the requireWebPermission gate already constrains to logged-in admins,
+  // but scoping by user_id keeps a leaked conversation_id from exposing
+  // another user's thread).
+  const convResult = await pool.query<{ id: string; user_id: string }>(
+    'SELECT id, user_id FROM remote_agent_conversations WHERE id = $1',
+    [id]
+  );
+  if (!convResult.rowCount || convResult.rowCount === 0) {
+    return apiError(c, 404, 'Conversation not found');
+  }
+  if (convResult.rows[0].user_id !== guard.userId) {
+    return apiError(c, 403, 'Conversation does not belong to current user');
+  }
+
+  const limitRaw = Number(c.req.query('limit') ?? '200');
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(Math.trunc(limitRaw), 1), 1000) : 200;
+
+  const result = await pool.query<{
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    user_id: string | null;
+    metadata: Record<string, unknown>;
+    created_at: string;
+  }>(
+    `SELECT id, role, content, user_id, metadata, created_at
+       FROM remote_agent_messages
+      WHERE conversation_id = $1
+      ORDER BY created_at ASC
+      LIMIT ${String(limit)}`,
+    [id]
+  );
+
+  return c.json({
+    conversation_id: id,
+    messages: result.rows.map(r => ({
+      id: r.id,
+      role: r.role,
+      content: r.content,
+      metadata: r.metadata,
+      created_at: r.created_at,
+    })),
   });
 });
 
@@ -370,10 +446,9 @@ async function insertMessage(args: {
     [args.conversationId, args.role, args.content, args.userId]
   );
   // Touch conversation timestamp
-  await pool.query(
-    'UPDATE remote_agent_conversations SET last_activity_at = NOW() WHERE id = $1',
-    [args.conversationId]
-  );
+  await pool.query('UPDATE remote_agent_conversations SET last_activity_at = NOW() WHERE id = $1', [
+    args.conversationId,
+  ]);
   return result.rows[0].id;
 }
 
