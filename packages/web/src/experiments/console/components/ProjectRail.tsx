@@ -8,6 +8,7 @@ import {
   Brain,
   ShieldCheck,
   History,
+  LayoutGrid,
   type LucideIcon,
 } from 'lucide-react';
 import { ProjectRow } from './ProjectRow';
@@ -339,6 +340,12 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
           label="Construtor de Workflows"
           title="Construtor visual de workflows (beta)"
           badge="beta"
+        />
+        <RailNavLink
+          to="/console/demandas"
+          icon={LayoutGrid}
+          label="Demandas"
+          title="Demandas — Kanban ( d )"
         />
         <RailNavLink
           to="/console/settings"

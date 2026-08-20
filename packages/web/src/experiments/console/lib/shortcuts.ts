@@ -9,6 +9,7 @@ export const SHORTCUTS: readonly KeymapGroup[] = [
       { keys: ['n'], label: 'Iniciar uma nova execução' },
       { keys: ['a'], label: 'Abrir agentes' },
       { keys: ['m'], label: 'Abrir memória' },
+      { keys: ['d'], label: 'Abrir demandas (Kanban)' },
       { keys: [','], label: 'Abrir configurações' },
       { keys: ['?'], label: 'Mostrar esta ajuda' },
     ],

@@ -22,5 +22,6 @@ export * from './providerKeys';
 export * from './memory';
 export * from './skills';
 export * from './rbac';
+export * from './forge';
 
 export { HttpError } from '../lib/http';

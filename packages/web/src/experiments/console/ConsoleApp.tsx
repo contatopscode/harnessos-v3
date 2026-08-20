@@ -14,6 +14,7 @@ import { AgentsPage } from './routes/AgentsPage';
 import { MemoryPage } from './routes/MemoryPage';
 import { RbacAdminPage } from './routes/RbacAdminPage';
 import { AuditLogPage } from './routes/AuditLogPage';
+import { DemandasPage } from './routes/DemandasPage';
 import { invalidate } from './store/cache';
 import { K } from './store/keys';
 import { useKeymap, type Binding } from './lib/keymap';
@@ -79,6 +80,13 @@ export function ConsoleApp(): ReactElement {
           navigate('/console/admin/rbac');
         },
       },
+      {
+        keys: ['d'],
+        label: 'Abrir demandas (Kanban)',
+        run: (): void => {
+          navigate('/console/demandas');
+        },
+      },
     ],
     [navigate]
   );
@@ -101,6 +109,7 @@ export function ConsoleApp(): ReactElement {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="agents" element={<AgentsPage />} />
             <Route path="memory" element={<MemoryPage />} />
+            <Route path="demandas" element={<DemandasPage />} />
             <Route path="admin/rbac" element={<RbacAdminPage />} />
             <Route path="admin/audit" element={<AuditLogPage />} />
             <Route path="builder" element={<BuilderRoute />} />
