@@ -29,7 +29,7 @@ const timeline = new Hono();
  *
  * Returns: { demand, entries: [...], totals: { activities, runs, cost_calls, cost_total_usd, cost_total_brl, messages } }
  */
-timeline.get('/:id/timeline', async c => {
+timeline.get('/demands/:id/timeline', async c => {
   const guard = await requireWebPermission(c, 'admin:users');
   if ('error' in guard) return guard.error;
   const id = c.req.param('id');

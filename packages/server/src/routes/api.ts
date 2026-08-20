@@ -1946,10 +1946,10 @@ export function registerApiRoutes(
   app.route('/api/forge/costs', forgeCosts);
   app.route('/api/forge/projects', forgeProjects);
   app.route('/api/forge/chat', forgeChat);
-  // activities + timeline mounted directly under /api/forge (the
-  // activities router defines its own /demands/:id/... prefix)
-  app.route('/api/forge', forgeActivities);
-  app.route('/api/forge', forgeTimeline);
+  // activities + timeline mounted under /api/forge/demands (the
+  // activities + timeline routers define their own /demands/:id/... prefix)
+  app.route('/api/forge/demands', forgeActivities);
+  app.route('/api/forge/demands', forgeTimeline);
 
   // ---- Global audit log (admin-only) ----
   // Migration 037: "tudo, absolutamente tudo tem que ser registrado".
