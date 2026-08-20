@@ -10,6 +10,7 @@
 import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as sprintsDb from '@archon/core/db/sprints';
+import { recordAuditLog } from '@archon/core/db/audit-log';
 import { createSprintBodySchema, type Sprint } from '@archon/core/schemas';
 
 type ApiErrorStatus = 400 | 404;
@@ -51,6 +52,19 @@ sprints.post('/', async c => {
     status: parsed.data.status,
     goal: parsed.data.goal ?? null,
   });
+  // Audit: sprint.created
+  await recordAuditLog({
+    action: 'sprint.created',
+    entityType: 'sprint',
+    entityId: created.id,
+    actorId: guard.userId,
+    metadata: {
+      name: created.name,
+      client_id: created.client_id,
+      start_date: created.start_date,
+      end_date: created.end_date,
+    },
+  });
   return c.json({ sprint: created satisfies Sprint }, 201);
 });
 
@@ -85,6 +99,16 @@ sprints.patch('/:id', async c => {
     goal: body.goal,
   });
   if (!updated) return apiError(c, 404, 'Sprint not found');
+  // Audit: sprint.updated
+  await recordAuditLog({
+    action: 'sprint.updated',
+    entityType: 'sprint',
+    entityId: id,
+    actorId: guard.userId,
+    metadata: {
+      changes: Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)),
+    },
+  });
   return c.json({ sprint: updated });
 });
 

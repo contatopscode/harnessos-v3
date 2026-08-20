@@ -22,6 +22,7 @@ import * as rolesDb from '@archon/core/db/roles';
 import * as permsDb from '@archon/core/db/permissions';
 import * as userRoleDb from '@archon/core/db/user-roles';
 import * as usersDb from '@archon/core/db/users';
+import { recordAuditLog } from '@archon/core/db/audit-log';
 import { createLogger } from '@archon/paths';
 import { pool } from '@archon/core/db/connection';
 import {
@@ -106,6 +107,13 @@ rbac.post('/roles', async c => {
       isSystem: false,
     });
     log.info({ roleId: role.id, slug: role.slug, by: guard.userId }, 'admin.role_created');
+    await recordAuditLog({
+      action: 'rbac.role.created',
+      entityType: 'role',
+      entityId: role.id,
+      actorId: guard.userId,
+      metadata: { slug: role.slug, name: role.name },
+    });
     return c.json({ role }, 201);
   } catch (e) {
     const err = e as Error;
@@ -135,6 +143,15 @@ rbac.patch('/roles/:id', async c => {
     description: body.description,
   });
   if (!updated) return apiError(c, 404, 'Role not found');
+  await recordAuditLog({
+    action: 'rbac.role.updated',
+    entityType: 'role',
+    entityId: id,
+    actorId: guard.userId,
+    metadata: {
+      changes: Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)),
+    },
+  });
   return c.json({ role: updated });
 });
 
@@ -149,6 +166,12 @@ rbac.delete('/roles/:id', async c => {
     const ok = await rolesDb.deleteRole(id);
     if (!ok) return apiError(c, 404, 'Role not found');
     log.info({ roleId: id, by: guard.userId }, 'admin.role_deleted');
+    await recordAuditLog({
+      action: 'rbac.role.deleted',
+      entityType: 'role',
+      entityId: id,
+      actorId: guard.userId,
+    });
     return c.json({ ok: true });
   } catch (e) {
     const err = e as Error;
@@ -188,6 +211,13 @@ rbac.post('/roles/:id/permissions', async c => {
     },
     'admin.role_permission_assigned'
   );
+  await recordAuditLog({
+    action: 'rbac.permission.granted',
+    entityType: 'role',
+    entityId: role.id,
+    actorId: guard.userId,
+    metadata: { role_slug: role.slug, permission_slug: perm.slug, created },
+  });
   return c.json({ ok: true, created });
 });
 
@@ -214,6 +244,13 @@ rbac.delete('/roles/:id/permissions/:slug', async c => {
     },
     'admin.role_permission_unassigned'
   );
+  await recordAuditLog({
+    action: 'rbac.permission.revoked',
+    entityType: 'role',
+    entityId: role.id,
+    actorId: guard.userId,
+    metadata: { role_slug: role.slug, permission_slug: perm.slug, removed },
+  });
   return c.json({ ok: true, removed });
 });
 
@@ -244,6 +281,13 @@ rbac.post('/users', async c => {
     },
     'admin.user_shell_created'
   );
+  await recordAuditLog({
+    action: 'rbac.user.role_assigned', // closest matching action for "user created"
+    entityType: 'user',
+    entityId: user.id,
+    actorId: guard.userId,
+    metadata: { event: 'user_shell_created', email: user.email, display_name: user.display_name },
+  });
   return c.json({ user }, 201);
 });
 
@@ -319,6 +363,13 @@ rbac.post('/users/:id/roles', async c => {
     },
     'admin.user_role_assigned'
   );
+  await recordAuditLog({
+    action: 'rbac.user.role_assigned',
+    entityType: 'user',
+    entityId: userId,
+    actorId: guard.userId,
+    metadata: { role_slug: parsed.data.role_slug, expires_at: parsed.data.expires_at ?? null },
+  });
   return c.json({ binding }, 201);
 });
 
@@ -335,6 +386,13 @@ rbac.delete('/users/:id/roles/:roleSlug', async c => {
     return apiError(c, 404, `User does not hold role "${roleSlug}"`);
   }
   log.info({ userId, roleSlug, by: guard.userId }, 'admin.user_role_unassigned');
+  await recordAuditLog({
+    action: 'rbac.user.role_revoked',
+    entityType: 'user',
+    entityId: userId,
+    actorId: guard.userId,
+    metadata: { role_slug: roleSlug },
+  });
   return c.json({ ok: true });
 });
 
@@ -373,6 +431,13 @@ rbac.post('/users/:id/permissions', async c => {
     },
     'admin.user_direct_permission_set'
   );
+  await recordAuditLog({
+    action: body.granted ? 'rbac.user.permission_granted' : 'rbac.user.permission_revoked',
+    entityType: 'user',
+    entityId: userId,
+    actorId: guard.userId,
+    metadata: { permission_slug: body.permission_slug, granted: body.granted },
+  });
   return c.json({ override: row }, 201);
 });
 
@@ -389,6 +454,13 @@ rbac.delete('/users/:id/permissions/:slug', async c => {
     return apiError(c, 404, 'No direct override for that permission');
   }
   log.info({ userId, permSlug, by: guard.userId }, 'admin.user_direct_permission_cleared');
+  await recordAuditLog({
+    action: 'rbac.user.permission_revoked',
+    entityType: 'user',
+    entityId: userId,
+    actorId: guard.userId,
+    metadata: { permission_slug: permSlug, cleared: true },
+  });
   return c.json({ ok: true });
 });
 

@@ -11,6 +11,7 @@
 import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as demandsDb from '@archon/core/db/demands';
+import { recordAuditLog } from '@archon/core/db/audit-log';
 import {
   createDemandBodySchema,
   updateDemandBodySchema,
@@ -80,6 +81,19 @@ demands.post('/', async c => {
       metadata: parsed.data.metadata,
       createdByUserId: guard.userId,
     });
+    // Audit: demand.created
+    await recordAuditLog({
+      action: 'demand.created',
+      entityType: 'demand',
+      entityId: created.id,
+      actorId: guard.userId,
+      metadata: {
+        slug: created.slug,
+        title: created.title,
+        client_id: created.client_id,
+        priority: created.priority,
+      },
+    });
     return c.json({ demand: created satisfies Demand }, 201);
   } catch (e) {
     const err = e as Error;
@@ -120,6 +134,16 @@ demands.patch('/:id', async c => {
     metadata: parsed.data.metadata,
   });
   if (!updated) return apiError(c, 404, 'Demand not found');
+  // Audit: demand.updated
+  await recordAuditLog({
+    action: 'demand.updated',
+    entityType: 'demand',
+    entityId: id,
+    actorId: guard.userId,
+    metadata: {
+      changes: Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)),
+    },
+  });
   return c.json({ demand: updated });
 });
 
@@ -135,6 +159,14 @@ demands.patch('/:id/status', async c => {
   }
   const updated = await demandsDb.updateDemand(id, { status: parsed.data.status });
   if (!updated) return apiError(c, 404, 'Demand not found');
+  // Audit: demand.updated (status_change is a special case)
+  await recordAuditLog({
+    action: 'demand.updated',
+    entityType: 'demand',
+    entityId: id,
+    actorId: guard.userId,
+    metadata: { status_change: parsed.data.status },
+  });
   return c.json({ demand: updated });
 });
 

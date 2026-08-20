@@ -20,6 +20,8 @@ import { Pool } from 'pg';
 import { createLogger } from '@archon/paths';
 import { isWebAuthEnabled, getSignupMode } from './config';
 import { isEmailOnAllowlist, makePgAllowlistQuery } from './allowlist';
+import { recordLoginEvent } from '@archon/core/db/audit-log';
+import { getPendingLoginRequestContext } from './login-context';
 
 const log = createLogger('web-auth');
 
@@ -145,6 +147,64 @@ function buildAuth(env: NodeJS.ProcessEnv): AuthInstance {
               });
             }
             return { data: user };
+          },
+        },
+      },
+      session: {
+        // Audit trail: every successful login creates a session row, so
+        // this hook fires exactly once per login. We use it to bump
+        // `users.last_login_at / last_login_ip / login_count` and write a
+        // `login.succeeded` row to the global audit log. Best-effort:
+        // never throw out of the hook (it would break the login).
+        create: {
+          after: async (session: { userId: string; id: string }) => {
+            try {
+              // Look up the user's email from Better Auth's user table.
+              // The auth pool is reused so we don't open another connection.
+              if (!authPool) return;
+              const userRes = await authPool.query<{ email: string }>(
+                'SELECT email FROM remote_agent_auth_user WHERE id = $1',
+                [session.userId]
+              );
+              const email = userRes.rows[0]?.email ?? 'unknown';
+              // Resolve the CANONICAL Archon user_id from the Better Auth
+              // user_id (mapped via remote_agent_user_identities). Falls
+              // back to null when no mapping exists (a fresh signup that
+              // hasn't linked yet — rare, but the audit row still records
+              // the email).
+              let canonicalUserId: string | null = null;
+              try {
+                const identRes = await authPool.query<{ user_id: string }>(
+                  `SELECT user_id FROM remote_agent_user_identities
+                   WHERE platform = 'web' AND platform_user_id = $1
+                   LIMIT 1`,
+                  [session.userId]
+                );
+                canonicalUserId = identRes.rows[0]?.user_id ?? null;
+              } catch (lookupErr) {
+                log.warn(
+                  { err: (lookupErr as Error).message, sessionId: session.id },
+                  'web_auth.identity_lookup_failed'
+                );
+              }
+              // Read IP + User-Agent from the per-request carrier set by
+              // the index.ts wrapper (Better Auth hooks don't get the
+              // Hono request).
+              const ctx = getPendingLoginRequestContext();
+              await recordLoginEvent({
+                userId: canonicalUserId,
+                email,
+                success: true,
+                ip: ctx?.ip ?? null,
+                userAgent: ctx?.userAgent ?? null,
+                source: 'web',
+              });
+            } catch (err) {
+              log.warn(
+                { err: (err as Error).message, sessionId: session.id },
+                'web_auth.session_create_audit_failed'
+              );
+            }
           },
         },
       },

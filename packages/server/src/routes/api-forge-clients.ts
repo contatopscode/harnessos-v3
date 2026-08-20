@@ -9,6 +9,7 @@
 import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as clientsDb from '@archon/core/db/clients';
+import { recordAuditLog } from '@archon/core/db/audit-log';
 import { createClientBodySchema, updateClientBodySchema, type Client } from '@archon/core/schemas';
 
 type ApiErrorStatus = 400 | 404 | 409;
@@ -48,6 +49,14 @@ clients.post('/', async c => {
       description: parsed.data.description ?? null,
       contact_email: parsed.data.contact_email ?? null,
     });
+    // Audit: client.created
+    await recordAuditLog({
+      action: 'client.created',
+      entityType: 'client',
+      entityId: created.id,
+      actorId: guard.userId,
+      metadata: { slug: created.slug, name: created.name },
+    });
     return c.json({ client: created satisfies Client }, 201);
   } catch (e) {
     const err = e as Error;
@@ -85,6 +94,16 @@ clients.patch('/:id', async c => {
     status: parsed.data.status,
   });
   if (!updated) return apiError(c, 404, 'Client not found');
+  // Audit: client.updated (only include fields that actually changed)
+  await recordAuditLog({
+    action: 'client.updated',
+    entityType: 'client',
+    entityId: id,
+    actorId: guard.userId,
+    metadata: {
+      changes: Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)),
+    },
+  });
   return c.json({ client: updated });
 });
 
@@ -101,6 +120,13 @@ clients.delete('/:id', async c => {
       result.reason?.includes('não encontrado') ? 404 : 409
     );
   }
+  // Audit: client.deleted
+  await recordAuditLog({
+    action: 'client.deleted',
+    entityType: 'client',
+    entityId: id,
+    actorId: guard.userId,
+  });
   return c.json({ ok: true });
 });
 

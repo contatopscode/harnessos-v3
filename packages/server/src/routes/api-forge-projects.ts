@@ -11,6 +11,7 @@
 import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as projectsDb from '@archon/core/db/projects';
+import { recordAuditLog } from '@archon/core/db/audit-log';
 import { type ProjectSummary } from '@archon/core/schemas';
 import { createLogger } from '@archon/paths';
 
@@ -81,6 +82,16 @@ projects.patch('/:id', async c => {
       kind: body.kind,
     });
     if (!updated) return apiError(c, 404, 'Project not found');
+    // Audit: project.updated
+    await recordAuditLog({
+      action: 'project.updated',
+      entityType: 'project',
+      entityId: id,
+      actorId: guard.userId,
+      metadata: {
+        changes: Object.fromEntries(Object.entries(body).filter(([, v]) => v !== undefined)),
+      },
+    });
     return c.json({ project: updated satisfies ProjectSummary });
   } catch (e) {
     const err = e as Error;
@@ -101,6 +112,13 @@ projects.delete('/:id', async c => {
       result.reason?.includes('não encontrado') ? 404 : 409
     );
   }
+  // Audit: project.deleted
+  await recordAuditLog({
+    action: 'project.deleted',
+    entityType: 'project',
+    entityId: id,
+    actorId: guard.userId,
+  });
   return c.json({ ok: true });
 });
 

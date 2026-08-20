@@ -122,6 +122,11 @@ import {
   getSignupMode,
   isArchonOwnedAuthPath,
 } from './auth';
+import {
+  setPendingLoginRequestContext,
+  clearPendingLoginRequestContext,
+  extractRequestIp,
+} from './auth/login-context';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -724,18 +729,33 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
     // it, so adding a route without exempting it fails CI rather than 404ing live.
     app.on(['POST', 'GET'], '/api/auth/*', async (c, next) => {
       if (isArchonOwnedAuthPath(c.req.path)) return next();
-      const res = await webAuth.handler(c.req.raw);
-      // Better Auth returns a fresh Response object that bypasses the
-      // app.use('/api/*', cors(...)) middleware. Mirror the CORS headers
-      // onto the response so the browser allows the cross-origin XHR
-      // with credentials (FORGE → HarnessOS).
-      const origin = c.req.header('origin');
-      if (origin) {
-        res.headers.set('Access-Control-Allow-Origin', origin);
-        res.headers.set('Access-Control-Allow-Credentials', 'true');
-        res.headers.set('Vary', 'Origin');
+      // Capture IP + User-Agent BEFORE delegating so the login audit
+      // log (via session.create.after hook in auth/instance.ts) can
+      // resolve the canonical user_id from the auth user_id and stamp
+      // the right values on the row.
+      const requestIp = extractRequestIp(c);
+      const requestUa = c.req.header('user-agent') ?? null;
+      setPendingLoginRequestContext({ ip: requestIp, userAgent: requestUa });
+      try {
+        const res = await webAuth.handler(c.req.raw);
+        // Better Auth returns a fresh Response object that bypasses the
+        // app.use('/api/*', cors(...)) middleware. Mirror the CORS headers
+        // onto the response so the browser allows the cross-origin XHR
+        // with credentials (FORGE → HarnessOS).
+        const origin = c.req.header('origin');
+        if (origin) {
+          res.headers.set('Access-Control-Allow-Origin', origin);
+          res.headers.set('Access-Control-Allow-Credentials', 'true');
+          res.headers.set('Vary', 'Origin');
+        }
+        return res;
+      } finally {
+        // Clear the request context after the response — but keep it long
+        // enough for the session.create.after hook (which fires inside
+        // webAuth.handler) to read it. The hook is synchronous-ish; the
+        // context is reset in a microtask after the handler returns.
+        clearPendingLoginRequestContext();
       }
-      return res;
     });
     getLog().info('web_auth.handler_registered');
     // Safe-default signal: web auth is on but no allowlist + no open-signup flag
