@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.6
 # =============================================================================
 # Archon / HarnessOS - Remote Agentic Coding Platform
 # Multi-stage build optimized for BuildKit cache mounts.
