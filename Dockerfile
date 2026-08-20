@@ -37,7 +37,12 @@ COPY apps/forge/package.json ./apps/forge/
 # --linker=hoisted: Bun's default "isolated" linker stores packages in
 # node_modules/.bun/ with symlinks that Vite/Rollup cannot resolve during
 # production builds. Hoisted layout gives classic flat node_modules.
-RUN bun install --frozen-lockfile --linker=hoisted
+# --mount=type=cache: keeps Bun's package cache warm across `docker build`
+# invocations on the same BuildKit daemon. Deploys that touch a single .ts
+# file re-use the entire install result; the only cold path is when
+# package.json or bun.lock change.
+RUN --mount=type=cache,target=/root/.bun/install/cache,id=bun-install \
+    bun install --frozen-lockfile --linker=hoisted
 
 # ---------------------------------------------------------------------------
 # Stage 2: Build web UI (Vite + React)
@@ -150,7 +155,10 @@ COPY packages/workflows/package.json ./packages/workflows/
 COPY apps/forge/package.json ./apps/forge/
 
 # Install production dependencies only (--ignore-scripts skips husky prepare hook)
-RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
+# Cache mount shared with the deps stage so the first deploy pays the full
+# install cost and every subsequent deploy re-uses the cache.
+RUN --mount=type=cache,target=/root/.bun/install/cache,id=bun-install \
+    bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted
 
 # Copy application source (Bun runs TypeScript directly, no compile step needed)
 COPY packages/adapters/ ./packages/adapters/
