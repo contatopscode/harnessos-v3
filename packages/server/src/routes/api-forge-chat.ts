@@ -33,8 +33,10 @@ const log = createLogger('forge.chat');
 const chatBodySchema = z
   .object({
     message: z.string().min(1).max(4000),
-    conversation_id: z.string().optional(),
-    codebase_id: z.string().optional(),
+    // nullable().optional() so JSON `null` (or undefined) is accepted —
+    // the FORGE frontend may explicitly send null to reset a conversation.
+    conversation_id: z.string().nullable().optional(),
+    codebase_id: z.string().nullable().optional(),
   })
   .openapi('ForgeChatBody');
 
@@ -79,7 +81,7 @@ chat.post('/', async c => {
   const conversationId = await getOrCreateConversation({
     userId,
     codebaseId: codebaseId ?? null,
-    conversationId: parsed.data.conversation_id,
+    conversationId: parsed.data.conversation_id ?? undefined,
   });
 
   // 2. Persist the USER message BEFORE calling the LLM — that way
@@ -93,10 +95,14 @@ chat.post('/', async c => {
   });
 
   // 3. Gather context (projetos + clientes + demandas + contagens).
+  //    codebaseId can be null (global chat) — pass undefined instead so
+  //    the SQL helper treats it as "no filter" (avoids `WHERE codebase_id
+  //    IS NULL` semantics which would be wrong for the "scope to this
+  //    codebase" intent here).
   const [projects, clients, demands] = await Promise.all([
     projectsDb.listProjectsWithCounts(),
     clientsDb.listClients(),
-    demandsDb.listDemands({ codebaseId, limit: 30 }),
+    demandsDb.listDemands({ codebaseId: codebaseId ?? undefined, limit: 30 }),
   ]);
 
   // 4. Build the system prompt + call MiniMax
