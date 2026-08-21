@@ -32,6 +32,12 @@ COPY packages/workflows/package.json ./packages/workflows/
 # be present in the build context so Bun's workspace lockfile resolution
 # succeeds (the lockfile references @archon/forge@workspace:apps/forge).
 COPY apps/forge/package.json ./apps/forge/
+# apps/tauri-shell is a desktop shell workspace member (HarnessOS desktop
+# app, Tauri 2). Its package.json is needed in the build context so Bun
+# resolves @archon/tauri-shell@workspace:apps/tauri-shell in the lockfile.
+# The actual Tauri binary is built outside Docker (local Mac/Windows
+# dev), not in the server image.
+COPY apps/tauri-shell/package.json ./apps/tauri-shell/
 
 # Install ALL dependencies (including devDependencies needed for web build)
 # --linker=hoisted: Bun's default "isolated" linker stores packages in
@@ -153,6 +159,9 @@ COPY packages/web/package.json ./packages/web/
 COPY packages/workflows/package.json ./packages/workflows/
 # apps/forge must also be present here for production lockfile resolution.
 COPY apps/forge/package.json ./apps/forge/
+# apps/tauri-shell is the desktop shell; same lockfile-resolution reason
+# as the deps stage above.
+COPY apps/tauri-shell/package.json ./apps/tauri-shell/
 
 # Install production dependencies only (--ignore-scripts skips husky prepare hook)
 # Cache mount shared with the deps stage so the first deploy pays the full

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react';
 import * as skill from '../skills';
 import type { Project } from '../primitives/project';
+import { pickDirectory, isTauri } from '@/lib/tauri';
 
 interface AddProjectDialogProps {
   open: boolean;
@@ -123,7 +124,10 @@ export function AddProjectDialog({
 
   const isGit = mode === 'url';
   const { owner, repo } = parseGitHubUrl(value);
-  const canPickFolder = !isGit && hasNativeFolderPicker();
+  // Tauri shell exposes pick_directory (returns absolute path), and modern
+  // browsers expose showDirectoryPicker (returns just the folder name).
+  // Either is good enough to enable the "Procurar…" button.
+  const canPickFolder = !isGit && (isTauri() || hasNativeFolderPicker());
 
   const onSubmit = async (e: FormEvent): Promise<void> => {
     e.preventDefault();
@@ -144,41 +148,40 @@ export function AddProjectDialog({
   };
 
   /**
-   * Native folder picker (Chrome/Edge 86+). The API returns a
-   * FileSystemDirectoryHandle whose `.name` is just the folder name (not
-   * the absolute path — browsers won't expose that for security). We use
-   * the typed parent path + the picked name to build the full path.
+   * Native folder picker — dispatches to Tauri (returns absolute path) when
+   * running inside the desktop shell, or falls back to the browser's
+   * showDirectoryPicker (Chrome/Edge 86+, returns just the folder name)
+   * when running in a regular browser.
    *
-   * The picker opens the OS file dialog (Finder on macOS, Explorer on
-   * Windows), where the user can create new folders natively. The picked
-   * folder MUST already exist — we don't mkdir here. If the user has not
-   * typed a parent path yet, we bail with an actionable hint instead of
-   * producing a bare-folder-name value that the server can't resolve.
+   * - Tauri: the user picks a folder in Finder/Explorer and the absolute
+   *   path lands in the input directly. No need to type a parent first.
+   * - Browser: the browser API only exposes the folder NAME, so the user
+   *   must have the parent path typed first; the picked name is appended.
+   *   If the field is empty, we bail with an actionable hint instead of
+   *   producing a bare-folder-name value that the server can't resolve.
    */
   const onBrowse = async (): Promise<void> => {
     setError(null);
-    const baseParent = value.trim() !== '' ? parentDir(value.trim()) : '';
-    if (baseParent === '') {
-      setError(
-        'Digite o caminho da pasta pai (ex.: /Users/voce/projetos) antes de procurar. O seletor nativo só retorna o nome da pasta — você pode criar a nova pasta direto no Finder antes de selecioná-la.'
-      );
-      return;
-    }
     try {
-      // showDirectoryPicker may exist but not be callable (e.g. iframe without
-      // permission). Wrap in a function reference so TS doesn't complain.
-      const picker = window.showDirectoryPicker;
-      if (typeof picker !== 'function') {
+      if (isTauri()) {
+        // Tauri returns the absolute path directly — no parent concat needed.
+        const fullPath = await pickDirectory();
+        if (fullPath === null) return; // user cancelled
+        setValue(fullPath);
+        return;
+      }
+      // Browser fallback
+      const baseParent = value.trim() !== '' ? parentDir(value.trim()) : '';
+      if (baseParent === '') {
         setError(
-          'Seletor nativo de pastas indisponível neste navegador. Digite o caminho manualmente.'
+          'Digite o caminho da pasta pai (ex.: /Users/voce/projetos) antes de procurar. O seletor nativo só retorna o nome da pasta — você pode criar a nova pasta direto no Finder antes de selecioná-la.'
         );
         return;
       }
-      const handle = await picker({ mode: 'read' });
-      const next = joinPath(baseParent, handle.name);
-      setValue(next);
+      const picked = await pickDirectory();
+      if (picked === null) return;
+      setValue(joinPath(baseParent, picked));
     } catch (err) {
-      // User-cancelled (AbortError) — silent. Other errors: surface them.
       if (err instanceof DOMException && err.name === 'AbortError') return;
       setError(err instanceof Error ? err.message : 'Seletor de pasta falhou');
     }
