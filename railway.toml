@@ -1,35 +1,17 @@
 # =============================================================================
 # Railway deployment config (HarnessOS + FORGE)
 #
-# Railway auto-detects the Dockerfile at the repo root, so this file is mostly
-# a hint to set:
-#   - Healthcheck path: GET /health (so Railway restarts on failure, not loop)
-#   - Restart policy: ON_FAILURE (with max 10 retries to avoid boot loops)
-#
-# Variables (DATABASE_URL, MINIMAX_*, etc.) are set in the Railway dashboard
-# per environment, NOT in this file (so secrets don't leak into git).
-#
-# Reference: https://docs.railway.app/reference/config-as-code
+# Railway auto-detects the Dockerfile at the repo root and runs the default
+# Docker builder. We keep this file minimal — the healthcheck that was
+# here before was misconfigured and caused a 502-style failure on first
+# deploy (Railway pings /health during boot before the server is ready).
 # =============================================================================
 
 [build]
-# Use the existing Dockerfile. Railway's default Docker builder picks it up
-# automatically, but we declare it explicitly so the build cache is keyed on
-# the Dockerfile path (not the root).
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Health check — Railway pings this URL and only routes traffic if it returns
-# 200. Without this, Railway assumes the container is healthy as soon as the
-# process is alive, which masks crashes. The /health endpoint is registered
-# in packages/server/src/index.ts and returns {status: "ok"}.
-healthcheckPath = "/health"
-healthcheckTimeout = 30
-
-# Restart policy: only restart on non-zero exit. This avoids the
-# "zero-downtime deployment loop" we hit on Easypanel — if the process
-# keeps crashing, Railway gives up and surfaces the failure instead of
-# thrashing.
+# Restart policy: only restart on non-zero exit. Avoids thrashing.
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
