@@ -123,3 +123,6 @@ test-results/
 
 # Local deploy credentials — generated per-machine, do not commit
 deploy.env
+
+# Railway
+.railway/
