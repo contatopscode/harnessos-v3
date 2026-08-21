@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "HarnessOS",
+  "version": "0.1.0",
+  "identifier": "ai.pscode.harnessos",
+  "build": {
+    "beforeDevCommand": "bun run --filter @archon/web dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "bun run --filter @archon/web build",
+    "frontendDist": "../../../packages/web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "HarnessOS",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Visible"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "HarnessOS — remote agentic coding platform (desktop)",
+    "longDescription": "HarnessOS desktop shell wraps the same web UI as the hosted HarnessOS, but with native filesystem access. Run workflows, manage codebases, and orchestrate AI agents — all from a native Mac/Windows app.",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "exceptionDomain": "harness-os.pscode.ia.br",
+      "frameworks": []
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  }
+}

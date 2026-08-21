@@ -1,0 +1,35 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for the HarnessOS desktop app. Grants the webview access to: dialog (native folder picker), fs (read filesystem scope), opener (open URLs in default browser), and shell (run whitelisted commands).",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:webview:default",
+    "core:app:default",
+    "core:event:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:path:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-read-dir",
+    "fs:allow-exists",
+    "opener:default",
+    "opener:allow-open-url",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "git",
+          "cmd": "git",
+          "args": ["--version"]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Build artifacts
+src-tauri/target/
+src-tauri/Cargo.lock
+src-tauri/gen/schemas/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# Tauri generated
+src-tauri/WixTools/
+
+# Local env
+.env
+.env.local
