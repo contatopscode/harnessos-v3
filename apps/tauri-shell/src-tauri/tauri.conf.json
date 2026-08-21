@@ -5,9 +5,7 @@
   "identifier": "ai.pscode.harnessos",
   "build": {
     "beforeDevCommand": "bun run --filter @archon/web dev",
-    "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "bun run --filter @archon/web build",
-    "frontendDist": "../../../packages/web/dist"
+    "beforeBuildCommand": "bun run --filter @archon/web build"
   },
   "app": {
     "windows": [
@@ -23,7 +21,8 @@
         "center": true,
         "decorations": true,
         "transparent": false,
-        "titleBarStyle": "Visible"
+        "titleBarStyle": "Visible",
+        "url": "http://localhost:3090"
       }
     ],
     "security": {
@@ -33,6 +32,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["bin/harnessos-server"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

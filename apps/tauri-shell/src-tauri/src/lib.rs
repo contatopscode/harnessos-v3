@@ -15,7 +15,10 @@
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+use tauri::Manager;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_shell::ShellExt;
 
 #[derive(Debug, Serialize)]
 pub struct AppInfo {
@@ -137,6 +140,73 @@ fn get_env(key: String) -> Option<String> {
     }
 }
 
+/// Path to the HarnessOS server sidecar binary. Tauri auto-renames
+/// `bin/harnessos-server` to `bin/harnessos-server-<target-triple>` for
+/// cross-platform builds, and copies it to Resources/_up_/ in the .app.
+const SIDECAR_NAME: &str = "harnessos-server";
+
+/// Default port for the local server. Webview URL (`tauri.conf.json`)
+/// points to `http://localhost:3090`.
+const SERVER_PORT: u16 = 3090;
+
+/// Wait for `http://localhost:{port}/health` to return 200, polling
+/// every 250ms up to `timeout_secs`. Returns the first 200 received.
+async fn wait_for_server(port: u16, timeout_secs: u64) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{port}/health");
+    let deadline = std::time::Instant::now() + Duration::from_secs(timeout_secs);
+    while std::time::Instant::now() < deadline {
+        match reqwest_get_200(&url).await {
+            Ok(true) => return Ok(()),
+            Ok(false) | Err(_) => {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        }
+    }
+    Err(format!("Server didn't become ready within {timeout_secs}s"))
+}
+
+/// Tiny inline HTTP GET that returns Ok(true) on 200, Ok(false) otherwise.
+/// We don't pull in reqwest (heavy dep) — net::TcpStream to localhost
+/// is enough for a healthcheck.
+async fn reqwest_get_200(url: &str) -> Result<bool, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    // Parse "http://host:port/path" — collect the pieces so the spawned
+    // closure below doesn't borrow `url` (spawn_blocking requires 'static).
+    let trimmed = url.trim_start_matches("http://").to_string();
+    let (host_port, path) = match trimmed.split_once('/') {
+        Some((hp, p)) => (hp.to_string(), format!("/{p}")),
+        None => (trimmed, "/".to_string()),
+    };
+    let (host, port) = match host_port.rsplit_once(':') {
+        Some((h, p)) => (h.to_string(), p.to_string()),
+        None => return Err("bad url".to_string()),
+    };
+
+    let result = tokio::task::spawn_blocking(move || -> Result<bool, String> {
+        let port: u16 = port.parse().map_err(|e: std::num::ParseIntError| e.to_string())?;
+        let addr = format!("{host}:{port}");
+        let socket_addr: std::net::SocketAddr = addr
+            .parse()
+            .map_err(|e: std::net::AddrParseError| e.to_string())?;
+        let mut stream = TcpStream::connect_timeout(&socket_addr, Duration::from_millis(500))
+            .map_err(|e| e.to_string())?;
+        let req = format!(
+            "GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+        );
+        stream
+            .write_all(req.as_bytes())
+            .map_err(|e| e.to_string())?;
+        let mut buf = [0u8; 64];
+        let n = stream.read(&mut buf).map_err(|e| e.to_string())?;
+        let response = String::from_utf8_lossy(&buf[..n]);
+        Ok(response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200"))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    Ok(result)
+}
+
 #[tauri::command]
 fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     let p = Path::new(&path);
@@ -183,6 +253,80 @@ pub fn run() {
             } else if cfg!(target_os = "windows") {
                 log::info!("Platform: windows ({})", std::env::consts::ARCH);
             }
+
+            // Spawn the HarnessOS server sidecar (the same Bun server we
+            // deploy to Easypanel, but compiled standalone so it doesn't
+            // need a Bun runtime on the user's machine). The server
+            // listens on 127.0.0.1:3090 and serves the same `packages/web/dist`
+            // the hosted UI does. Postgres points to the same remote DB,
+            // so audit log / codebases / demands stay in sync across the
+            // team regardless of who's using the desktop app vs the
+            // hosted UI.
+            let shell = app.shell();
+            let mut cmd = match shell.sidecar(SIDECAR_NAME) {
+                Ok(c) => c,
+                Err(e) => {
+                    log::error!("Failed to build sidecar command: {e}");
+                    return Err(Box::new(std::io::Error::other(
+                        "HarnessOS server sidecar not found in bundle",
+                    )));
+                }
+            };
+            cmd = cmd
+                .env("PORT", SERVER_PORT.to_string())
+                .env("HOSTNAME", "127.0.0.1")
+                .env("NODE_ENV", "production")
+                .env("LOG_LEVEL", "info");
+            // DATABASE_URL: prefer a user-set env (set by the Tauri command
+            // if/when we add a config screen), fall back to the default
+            // remote DB. Default is the same Postgres the Easypanel
+            // deployment uses, so audit log + codebases are shared.
+            if std::env::var("DATABASE_URL").is_err() {
+                cmd = cmd.env(
+                    "DATABASE_URL",
+                    "postgresql://archon:Hos_8K3mN9pL2qR7vT5wX1yA4bC6dE0fG@213.199.32.229:5432/HarnessOS?sslmode=disable",
+                );
+            }
+
+            // Sidecar side effects (writing its child into the AppHandle so
+            // we can kill it on app exit). Tauri auto-kills sidecars on
+            // shutdown, but we hold a CommandChild anyway for diagnostics.
+            let (_rx, _child) = match cmd.spawn() {
+                Ok(pair) => pair,
+                Err(e) => {
+                    log::error!("Failed to spawn sidecar: {e}");
+                    return Err(Box::new(std::io::Error::other(
+                        "Failed to spawn HarnessOS server sidecar",
+                    )));
+                }
+            };
+            log::info!("Server sidecar spawned, waiting for /health…");
+
+            // Block setup() (and the window open) until the server is up.
+            // Worst case: 30s timeout, then the user sees a blank webview
+            // (we surface the error in logs).
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                match wait_for_server(SERVER_PORT, 30).await {
+                    Ok(()) => {
+                        log::info!("Server ready on http://localhost:{SERVER_PORT}");
+                    }
+                    Err(e) => {
+                        log::error!("Server not ready: {e}");
+                        // Bring the main window to front + show a banner.
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.eval(
+                                "document.body.insertAdjacentHTML('beforeend', \
+                                 '<div style=\"position:fixed;top:0;left:0;right:0;\
+                                 background:#c00;color:#fff;padding:8px;font:12px/1.4 \
+                                 system-ui;z-index:99999\">HarnessOS server failed \
+                                 to start. Check logs.</div>')",
+                            );
+                        }
+                    }
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
