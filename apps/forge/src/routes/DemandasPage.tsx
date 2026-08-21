@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
-import { api, type Demand, ApiError } from '../lib/api';
-import { Loader2, Plus, Search, Activity, History, Filter, X } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api, type Demand, type Client, type ProjectSummary, ApiError } from '../lib/api';
+import { Loader2, Plus, Search, Activity, History, Filter, X, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import type { JSX } from 'react';
 import { cn } from '../lib/cn';
@@ -18,13 +18,18 @@ const COLUMNS: { status: Demand['status']; label: string; accent: string }[] = [
 ];
 
 export function DemandasPage(): JSX.Element {
+  const qc = useQueryClient();
   const [search, setSearch] = useState('');
   const [clientId, setClientId] = useState<string>('');
   const [codebaseId, setCodebaseId] = useState<string>('');
   const [timelineFor, setTimelineFor] = useState<Demand | null>(null);
+  // Create-demand modal state. The backend forces status='backlog' for all
+  // new demands (the schema has no `status` field on POST), so FORGE-created
+  // demands always land in the Backlog column. Project managers move them
+  // through the pipeline from the HarnessOS Console; the FORGE view stays
+  // read-only for status.
+  const [createOpen, setCreateOpen] = useState(false);
 
-  // Filter source data: clients + projects. Cached so the dropdowns stay
-  // responsive and don't refetch on every board re-render.
   const { data: clients } = useQuery({
     queryKey: ['forge', 'clients', 'all'],
     queryFn: () => api.clients.list(),
@@ -40,6 +45,17 @@ export function DemandasPage(): JSX.Element {
   const filteredProjects = clientId
     ? (projects?.projects ?? []).filter(p => p.client_id === clientId)
     : (projects?.projects ?? []);
+
+  // Create-demand mutation. The backend forces status='backlog' so the new
+  // card always lands in the Backlog column. After success we close the
+  // modal + invalidate the board query so the new card appears.
+  const createDemand = useMutation({
+    mutationFn: api.demands.create,
+    onSuccess: () => {
+      setCreateOpen(false);
+      void qc.invalidateQueries({ queryKey: ['forge', 'demands'] });
+    },
+  });
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['forge', 'demands', 'board', search, clientId, codebaseId],
@@ -78,6 +94,9 @@ export function DemandasPage(): JSX.Element {
           </div>
           <button
             type="button"
+            onClick={() => {
+              setCreateOpen(true);
+            }}
             className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-magenta)] px-3 py-1.5 text-[12.5px] font-medium text-white shadow-sm transition hover:bg-[var(--accent-hover)]"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -176,6 +195,26 @@ export function DemandasPage(): JSX.Element {
         onClose={() => {
           setTimelineFor(null);
         }}
+      />
+
+      <CreateDemandModal
+        open={createOpen}
+        onClose={() => {
+          setCreateOpen(false);
+        }}
+        clients={clients?.clients ?? []}
+        projects={projects?.projects ?? []}
+        onSubmit={body => {
+          createDemand.mutate(body);
+        }}
+        isSubmitting={createDemand.isPending}
+        errorMessage={
+          createDemand.error
+            ? createDemand.error instanceof ApiError
+              ? createDemand.error.message
+              : 'Erro inesperado ao criar demanda'
+            : null
+        }
       />
     </div>
   );
@@ -305,6 +344,264 @@ function ErrorState({ error }: { error: Error }): JSX.Element {
         {isApiError ? `Erro ${String(error.status)}` : 'Erro inesperado'}
       </div>
       <div className="mt-1 text-[12px] text-[var(--text-secondary)]">{error.message}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CreateDemandModal — New demand form. FORGE creates always land in the
+// Backlog column (backend forces status='backlog' on POST; the schema
+// has no `status` field). Project managers move them through the
+// pipeline from the HarnessOS Console; the FORGE view stays read-only
+// for status (per "Status controlado pelo Builder" rule).
+// ---------------------------------------------------------------------------
+interface CreateDemandModalProps {
+  open: boolean;
+  onClose: () => void;
+  clients: Client[];
+  projects: ProjectSummary[];
+  onSubmit: (body: {
+    slug: string;
+    title: string;
+    description?: string;
+    client_id: string;
+    codebase_id?: string;
+    priority?: 'baixa' | 'media' | 'alta' | 'urgente';
+    due_date?: string;
+  }) => void;
+  isSubmitting: boolean;
+  errorMessage: string | null;
+}
+
+function CreateDemandModal({
+  open,
+  onClose,
+  clients,
+  projects,
+  onSubmit,
+  isSubmitting,
+  errorMessage,
+}: CreateDemandModalProps): JSX.Element | null {
+  const [slug, setSlug] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [codebaseId, setCodebaseId] = useState('');
+  const [priority, setPriority] = useState<'baixa' | 'media' | 'alta' | 'urgente'>('media');
+  const [dueDate, setDueDate] = useState('');
+
+  if (!open) return null;
+
+  // Projects filtered by selected client (so a PSCODE demand can't
+  // accidentally get pointed at an "Another Client" project).
+  const filteredProjects = clientId ? projects.filter(p => p.client_id === clientId) : projects;
+
+  const canSubmit = slug.trim().length >= 3 && title.trim().length > 0 && clientId !== '';
+
+  function onSubmitForm(e: React.FormEvent): void {
+    e.preventDefault();
+    if (!canSubmit || isSubmitting) return;
+    onSubmit({
+      slug: slug.trim().toUpperCase(),
+      title: title.trim(),
+      ...(description.trim().length > 0 ? { description: description.trim() } : {}),
+      client_id: clientId,
+      ...(codebaseId ? { codebase_id: codebaseId } : {}),
+      priority,
+      ...(dueDate ? { due_date: new Date(dueDate).toISOString() } : {}),
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[90vh] w-full max-w-[640px] flex-col rounded-[12px] border border-[var(--border)] bg-[var(--surface)] shadow-2xl"
+        onClick={e => {
+          e.stopPropagation();
+        }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--border)] p-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Plus className="h-4 w-4 text-[var(--brand-magenta)]" aria-hidden />
+              <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Nova demanda</h2>
+            </div>
+            <p className="mt-1 text-[11.5px] text-[var(--text-tertiary)]">
+              Criada como <span className="font-mono text-[var(--brand-magenta)]">backlog</span>. O
+              Builder do HarnessOS move a demanda pelas etapas do Kanban.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-[var(--text-tertiary)] transition hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)]"
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmitForm} className="flex flex-col overflow-hidden">
+          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                  Slug
+                </span>
+                <input
+                  value={slug}
+                  onChange={e => {
+                    setSlug(e.target.value);
+                  }}
+                  placeholder="PSCODE-EC-FSM-2026-013"
+                  required
+                  minLength={3}
+                  pattern="[A-Z0-9][A-Z0-9-]*"
+                  className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-3 py-1.5 font-mono text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--brand-magenta)]"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                  Prioridade
+                </span>
+                <select
+                  value={priority}
+                  onChange={e => {
+                    setPriority(e.target.value as typeof priority);
+                  }}
+                  className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--brand-magenta)]"
+                >
+                  <option value="baixa">baixa</option>
+                  <option value="media">média</option>
+                  <option value="alta">alta</option>
+                  <option value="urgente">urgente</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                Título
+              </span>
+              <input
+                value={title}
+                onChange={e => {
+                  setTitle(e.target.value);
+                }}
+                placeholder="Implementar feature X no projeto Y"
+                required
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-3 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--brand-magenta)]"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                Descrição
+              </span>
+              <textarea
+                value={description}
+                onChange={e => {
+                  setDescription(e.target.value);
+                }}
+                rows={3}
+                placeholder="Contexto, critérios de aceitação, links…"
+                className="mt-1 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-3 py-2 text-[12.5px] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-magenta)]"
+              />
+            </label>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                  Cliente
+                </span>
+                <select
+                  value={clientId}
+                  onChange={e => {
+                    setClientId(e.target.value);
+                    setCodebaseId('');
+                  }}
+                  required
+                  className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--brand-magenta)]"
+                >
+                  <option value="">Selecione um cliente…</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                  Projeto
+                </span>
+                <select
+                  value={codebaseId}
+                  onChange={e => {
+                    setCodebaseId(e.target.value);
+                  }}
+                  disabled={filteredProjects.length === 0}
+                  className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-2.5 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--brand-magenta)] disabled:opacity-50"
+                >
+                  <option value="">(sem projeto)</option>
+                  {filteredProjects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-[var(--text-tertiary)]">
+                Data limite (opcional)
+              </span>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={e => {
+                  setDueDate(e.target.value);
+                }}
+                className="mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--surface-inset)] px-3 py-1.5 text-[12.5px] text-[var(--text-primary)] outline-none focus:border-[var(--brand-magenta)]"
+              />
+            </label>
+
+            {errorMessage && (
+              <div className="flex items-start gap-2 rounded-md border border-[var(--error)]/30 bg-[var(--error-soft)] px-3 py-2 text-[12px] text-[var(--error)]">
+                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>{errorMessage}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] p-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-medium text-[var(--text-secondary)] transition hover:text-[var(--text-primary)] disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit || isSubmitting}
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-magenta)] px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isSubmitting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              Criar como backlog
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

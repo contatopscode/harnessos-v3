@@ -54,6 +54,21 @@ export interface HandleMessageContext {
    * own auth flows are wired.
    */
   readonly userId?: string;
+  /**
+   * FORGE demand ID — when set, the workflow_run row gets `demand_id` and
+   * `triggered_by` populated, the FORGE audit-trail hook fires
+   * `run_started` activity on the demand, and the auto-progress logic in
+   * `completeWorkflowRun` / `failWorkflowRun` advances the demand's
+   * status when the run finishes (forward-only).
+   */
+  readonly demandId?: string;
+  /**
+   * FORGE audit-trail — origin of the run trigger. Defaults to `'chat'`
+   * for chat-driven runs, `'manual'` for human-clicked "Disparar RUN"
+   * buttons, `'auto'` for builder-driven triggers. Mirrors the enum
+   * accepted by `createWorkflowRun` in @archon/core/db/workflows.
+   */
+  readonly triggeredBy?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
 }
 
 export interface CommandResult {

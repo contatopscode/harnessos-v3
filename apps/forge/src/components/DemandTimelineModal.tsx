@@ -16,16 +16,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { JSX } from 'react';
+import { X, Activity, PlayCircle, MessageSquare, Receipt, Loader2, RefreshCcw } from 'lucide-react';
 import {
-  X,
-  Activity,
-  PlayCircle,
-  MessageSquare,
-  Receipt,
-  Loader2,
-  RefreshCcw,
-} from 'lucide-react';
-import { api, type Demand, type DemandStatus, type DemandPriority, type DemandTimeline } from '../lib/api';
+  api,
+  type Demand,
+  type DemandStatus,
+  type DemandPriority,
+  type DemandTimeline,
+} from '../lib/api';
 import { cn } from '../lib/cn';
 
 interface DemandTimelineModalProps {
@@ -34,7 +32,11 @@ interface DemandTimelineModalProps {
   onClose: () => void;
 }
 
-export function DemandTimelineModal({ demand, open, onClose }: DemandTimelineModalProps): JSX.Element | null {
+export function DemandTimelineModal({
+  demand,
+  open,
+  onClose,
+}: DemandTimelineModalProps): JSX.Element | null {
   const qc = useQueryClient();
   const [noteText, setNoteText] = useState('');
 
@@ -72,7 +74,9 @@ export function DemandTimelineModal({ demand, open, onClose }: DemandTimelineMod
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-[var(--brand-magenta)]" aria-hidden />
-              <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Timeline da demanda</h2>
+              <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
+                Timeline da demanda
+              </h2>
               <span className="font-mono text-[10.5px] text-[var(--text-tertiary)]">
                 {demand.slug}
               </span>
@@ -81,7 +85,9 @@ export function DemandTimelineModal({ demand, open, onClose }: DemandTimelineMod
               {demand.title}
             </h3>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-[var(--text-tertiary)]">
-              <span className={cn('rounded-full border px-2 py-0.5', statusBadgeClass(demand.status))}>
+              <span
+                className={cn('rounded-full border px-2 py-0.5', statusBadgeClass(demand.status))}
+              >
                 {demand.status}
               </span>
               <span>·</span>
@@ -196,12 +202,19 @@ function TimelineRow({ entry }: { entry: import('../lib/api').DemandTimelineEntr
 
   return (
     <li className="flex gap-3 rounded-md border border-[var(--border)] bg-[var(--surface-inset)] p-2.5">
-      <div className={cn('mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full', colorClass)}>
+      <div
+        className={cn(
+          'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full',
+          colorClass
+        )}
+      >
         <IconComponent className="h-3 w-3" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[12.5px] font-medium text-[var(--text-primary)]">{title}</span>
+          <span className="truncate text-[12.5px] font-medium text-[var(--text-primary)]">
+            {title}
+          </span>
           <time className="shrink-0 font-mono text-[10.5px] text-[var(--text-tertiary)]">
             {formatTime(at)}
           </time>

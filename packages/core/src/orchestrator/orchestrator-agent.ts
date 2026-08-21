@@ -662,6 +662,17 @@ async function dispatchOrchestratorWorkflow(
    * that don't have it readily in scope omit it and the run reports "custom".
    */
   source?: WorkflowSource,
+  /**
+   * FORGE audit-trail — link the background run to the demand the user
+   * clicked "Disparar RUN" on. Threaded through to the workflow_run row
+   * + auto-progress hooks. Undefined for freeform chat runs.
+   */
+  demandId?: string,
+  /**
+   * FORGE audit-trail — origin of the run trigger. Defaults to undefined
+   * (treated as chat-sourced downstream).
+   */
+  triggeredBy?: 'chat' | 'api' | 'cron' | 'auto' | 'manual',
   options?: WorkflowDispatchOptions
 ): Promise<void> {
   // The codebase's stored default branch — the $BASE_BRANCH fallback for every
@@ -871,6 +882,13 @@ async function dispatchOrchestratorWorkflow(
         isolationHints,
         userId,
         source,
+        // FORGE audit-trail — link the background run to the demand the
+        // user clicked "Disparar RUN" on. Threaded through to the
+        // workflow_run row + auto-progress hooks. The local variables
+        // were destructured at the top of `handleMessage` from the
+        // `context` parameter (no `ctx` object at this scope).
+        demandId,
+        triggeredBy,
       },
       workflow
     );
@@ -1107,6 +1125,10 @@ export async function handleMessage(
     isolationHints,
     attachedFiles,
     userId,
+    // FORGE audit-trail — threaded into the workflow_run row by the
+    // dispatch chain. Stays undefined for freeform chat runs.
+    demandId,
+    triggeredBy,
   } = context ?? {};
   try {
     getLog().debug({ conversationId, userId }, 'orchestrator_message_received');
@@ -1217,6 +1239,12 @@ export async function handleMessage(
             isolationHints,
             userId,
             workflowSource,
+            // FORGE audit-trail — propagation through resume path. A
+            // paused run that was originally triggered from a demand
+            // (e.g. by a "Disparar RUN" click) keeps the demand
+            // linkage when resumed.
+            demandId,
+            triggeredBy,
             { resumeRunId: pausedRun.id, resumeRun: pausedRun }
           );
           getLog().info(
@@ -1739,6 +1767,11 @@ export async function handleMessage(
                   codebaseId: scopedCodebaseId,
                   availableWorkflows: workflows,
                   userId,
+                  // FORGE audit-trail — propagated from the outer
+                  // handleMessage context (e.g. when a "Disparar RUN" UI
+                  // triggers a workflow via this startWorkflow hook).
+                  demandId,
+                  triggeredBy,
                 },
                 wf
               );
@@ -2454,7 +2487,16 @@ async function handleWorkflowInvocationResult(
       workflow,
       workflowPrompt,
       isolationHints,
-      userId
+      userId,
+      undefined, // source
+      // FORGE audit-trail — NOT threaded here because this helper
+      // (handleWorkflowInvocationResult) is defined at module scope
+      // and doesn't have handleMessage's destructured `demandId`/
+      // `triggeredBy` in closure. Chat-driven workflow invocations
+      // (vs "Disparar RUN" demand triggers) are the primary path
+      // through this call, so the missing linkage is acceptable.
+      undefined, // demandId
+      undefined // triggeredBy
     );
     return;
   }
@@ -2801,7 +2843,11 @@ async function handleWorkflowRunCommand(
       userMessage,
       isolationHints,
       userId,
-      undefined,
+      undefined, // source
+      // FORGE audit-trail — module-scope helper, demand linkage
+      // not threaded here. Same trade-off as the invocation path.
+      undefined, // demandId
+      undefined, // triggeredBy
       options
     );
     return;
@@ -2882,6 +2928,10 @@ async function handleWorkflowRunCommand(
       isolationHints,
       userId,
       resolvedEntry?.source,
+      // FORGE audit-trail — module-scope helper, demand linkage
+      // not threaded here. Same trade-off as the invocation path.
+      undefined, // demandId
+      undefined, // triggeredBy
       options
     );
     return;

@@ -380,6 +380,20 @@ export type ExecuteWorkflowOptions = ResumePayload & {
    */
   userId?: string;
   /**
+   * FORGE demand ID — when set, the workflow_run row gets `demand_id` and
+   * `triggered_by` populated, the audit-trail hook fires `run_started`
+   * activity on the demand, and the auto-progress logic in
+   * `completeWorkflowRun` / `failWorkflowRun` advances the demand's
+   * status when the run finishes (forward-only). Threaded from
+   * `HandleMessageContext.demandId` through the dispatch chain.
+   */
+  demandId?: string;
+  /**
+   * FORGE audit-trail — origin of the run trigger. See
+   * `HandleMessageContext.triggeredBy` for the full enum.
+   */
+  triggeredBy?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
+  /**
    * Execution context resolved by the isolation seam: `{ kind: 'host' }` (default)
    * runs on the Archon host; `{ kind: 'container', … }` (folder-project container
    * backend, Phase B) runs provider turns and subprocesses inside the prepared
@@ -462,6 +476,11 @@ export async function executeWorkflow(
     baseBranch: callerBaseBranch,
     execContext = { kind: 'host' },
     container: containerCtx,
+    // FORGE audit-trail — same demand linkage, used when `preCreatedRun`
+    // is undefined (resume path) and we have to re-create the run row
+    // locally to keep the audit-trail intact.
+    demandId,
+    triggeredBy,
   } = opts;
 
   // Guard: a container run MUST be resumed with its container rewired (the CLI does
@@ -678,6 +697,11 @@ export async function executeWorkflow(
         },
         parent_conversation_id: parentConversationId,
         user_id: userId,
+        // FORGE audit-trail — link this run to a demand (set by the
+        // dispatch chain when the user clicks "Disparar RUN" on a card;
+        // undefined for freeform chat runs).
+        demand_id: demandId,
+        triggered_by: triggeredBy,
       });
     } catch (error) {
       const err = error as Error;

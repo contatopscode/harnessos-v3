@@ -78,6 +78,20 @@ export interface IWorkflowStore {
     parent_conversation_id?: string;
     /** Archon user UUID; populated via ExecuteWorkflowOptions.userId. */
     user_id?: string;
+    /**
+     * FORGE demand ID — populated via ExecuteWorkflowOptions.demandId
+     * (threaded from HandleMessageContext.demandId). When set, the
+     * FORGE audit-trail hook fires `run_started` on the demand and
+     * the auto-progress logic in completeWorkflowRun /
+     * failWorkflowRun advances the demand's status when the run
+     * finishes.
+     */
+    demand_id?: string;
+    /**
+     * FORGE audit-trail — origin of the run trigger. Mirrors the
+     * `triggered_by` enum on `remote_agent_workflow_runs`.
+     */
+    triggered_by?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
   }): Promise<WorkflowRun>;
   getWorkflowRun(id: string): Promise<WorkflowRun | null>;
   /**

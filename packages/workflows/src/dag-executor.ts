@@ -194,7 +194,10 @@ async function resolveCostLinkage(ctx: RunLayersContext): Promise<{
     demandId = run?.demand_id ?? null;
   } catch (err) {
     getLog().warn(
-      { err: err instanceof Error ? err : new Error(String(err)), conversationId: ctx.conversationId },
+      {
+        err: err instanceof Error ? err : new Error(String(err)),
+        conversationId: ctx.conversationId,
+      },
       'dag.cost_linkage_run_lookup_failed'
     );
   }
@@ -5468,13 +5471,14 @@ async function runLayers(ctx: RunLayersContext): Promise<void> {
                 // DagNode is a discriminated union (CommandNode | PromptNode |
                 // BashNode | …) — infer the kind by which field is set. The
                 // presence of `prompt` identifies AI nodes (most common).
-                node_kind: nodeById.get(nodeId)?.prompt !== undefined
-                  ? 'prompt'
-                  : nodeById.get(nodeId)?.command !== undefined
-                    ? 'command'
-                    : nodeById.get(nodeId)?.bash !== undefined
-                      ? 'bash'
-                      : 'other',
+                node_kind:
+                  nodeById.get(nodeId)?.prompt !== undefined
+                    ? 'prompt'
+                    : nodeById.get(nodeId)?.command !== undefined
+                      ? 'command'
+                      : nodeById.get(nodeId)?.bash !== undefined
+                        ? 'bash'
+                        : 'other',
               },
             })
             .catch((costErr: unknown) => {

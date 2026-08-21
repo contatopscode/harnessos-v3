@@ -164,3 +164,57 @@ export async function addNote(id: string, note: string): Promise<{ activity: Dem
     body: JSON.stringify({ action: 'note', note }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Create + Run skills (used by "+ Nova" and "Disparar RUN" buttons)
+// ---------------------------------------------------------------------------
+
+/**
+ * Body for `POST /api/forge/demands`. The backend forces `status='backlog'`
+ * on every new demand (the schema has no `status` field on POST), so
+ * Console-created demands always start in the Backlog column and only
+ * advance when a workflow run completes (`completeWorkflowRun` hook).
+ */
+export interface CreateDemandBody {
+  slug: string;
+  title: string;
+  client_id: string;
+  codebase_id?: string;
+  description?: string;
+  priority?: 'baixa' | 'media' | 'alta' | 'urgente';
+  due_date?: string;
+}
+
+export async function createDemand(body: CreateDemandBody): Promise<Demand> {
+  const data = await requestJson<{ demand: Demand }>('/api/forge/demands', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return data.demand;
+}
+
+/**
+ * Body for `POST /api/forge/demands/:id/run` — the "Disparar RUN" button.
+ * Triggers a workflow run linked to the demand via `workflow_run.demand_id`,
+ * so the audit-trail hooks (`completeWorkflowRun` / `failWorkflowRun`)
+ * auto-advance the demand's status when the run finishes.
+ */
+export interface RunDemandBody {
+  workflow: string;
+  message: string;
+  triggered_by?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
+}
+
+export interface RunDemandResponse {
+  accepted: true;
+  status: 'dispatched';
+  demand_id: string;
+  workflow: string;
+}
+
+export async function runDemand(id: string, body: RunDemandBody): Promise<RunDemandResponse> {
+  return requestJson<RunDemandResponse>(`/api/forge/demands/${id}/run`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}

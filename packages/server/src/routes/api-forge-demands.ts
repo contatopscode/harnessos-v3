@@ -1,18 +1,84 @@
 /**
  * VOLUND FORGE — demands (kanban cards) REST API.
  *
- * Includes the kanban board projection (`/demands/board`) and the
- * dedicated status endpoint (`PATCH /demands/:id/status`) used by
- * drag-and-drop in the UI. Filters at list time mirror the schema:
- * client_id, codebase_id, status, free-text on slug/title.
+ * Includes the kanban board projection (`/demands/board`), the dedicated
+ * status endpoint (`PATCH /demands/:id/status`) used by drag-and-drop in
+ * the UI, and the **disparar RUN** endpoint (`POST /demands/:id/run`)
+ * that triggers a workflow run linked to the demand. Filters at list
+ * time mirror the schema: client_id, codebase_id, status, free-text on
+ * slug/title.
+ *
+ * Auto-progress: when a workflow run is triggered from a demand, the
+ * `completeWorkflowRun` / `failWorkflowRun` hooks advance the demand
+ * status forward (backlog → triagem → requisitos → em_andamento) or
+ * set 'bloqueada' on failure — the user does NOT need to move the
+ * card manually after the run finishes.
  *
  * TODO(forge-perms): gate should narrow to `forge:read` / `forge:write`.
  */
 import { Hono } from 'hono';
+import { z } from '@hono/zod-openapi';
 import { requireWebPermission } from '../auth/rbac';
 import * as demandsDb from '@archon/core/db/demands';
 import { recordAuditLog } from '@archon/core/db/audit-log';
 import { changeDemandStatus } from '@archon/core/db/demand-activities';
+import { createLogger } from '@archon/paths';
+import { handleMessage } from '@archon/core/orchestrator/orchestrator-agent';
+import type { IPlatformAdapter, MessageMetadata } from '@archon/core/types';
+import type { MessageChunk, TokenUsage } from '@archon/providers/types';
+
+const log = createLogger('forge.demands');
+
+/**
+ * Minimal no-op IPlatformAdapter for fire-and-forget workflow runs
+ * triggered from a demand. The orchestrator needs an adapter to call
+ * `sendMessage` / `ensureThread` on, but the synthetic conversation
+ * (`web-demand-${id}-${ts}`) is never opened in the Web UI — the user
+ * follows the demand's progress through the kanban card auto-advance
+ * instead of the chat SSE stream. So every method is a no-op that just
+ * logs the discard at debug level.
+ *
+ * Keeping this inlined (rather than reaching for the live webAdapter
+ * singleton) avoids a cross-file dependency + lets the route be
+ * imported by any future surface (e.g. a CLI) without coupling to the
+ * web transport.
+ */
+const noopDemandAdapter: IPlatformAdapter = {
+  async sendMessage(
+    _conversationId: string,
+    message: string,
+    _metadata?: MessageMetadata
+  ): Promise<void> {
+    log.debug({ messagePreview: message.slice(0, 80) }, 'demand_run.sendMessage_dropped');
+  },
+  async ensureThread(originalConversationId: string): Promise<string> {
+    return originalConversationId;
+  },
+  getStreamingMode(): 'stream' | 'batch' {
+    return 'batch';
+  },
+  getPlatformType(): string {
+    return 'demand-runner';
+  },
+  async start(): Promise<void> {
+    // no-op
+  },
+  stop(): void {
+    // no-op
+  },
+  async sendStructuredEvent(_conversationId: string, _event: MessageChunk): Promise<void> {
+    // no-op — the user follows progress via demand_activities, not via SSE
+  },
+  async emitRetract(): Promise<void> {
+    // no-op
+  },
+  async sendResultFooter(
+    _conversationId: string,
+    _info: { cost?: number; tokens?: TokenUsage; stopReason?: string }
+  ): Promise<void> {
+    // no-op
+  },
+};
 import {
   createDemandBodySchema,
   updateDemandBodySchema,
@@ -20,7 +86,7 @@ import {
   type Demand,
 } from '@archon/core/schemas';
 
-type ApiErrorStatus = 400 | 404 | 409;
+type ApiErrorStatus = 400 | 404 | 409 | 500;
 
 function apiError(
   c: { json: (data: unknown, status?: number) => Response },
@@ -177,9 +243,109 @@ demands.patch('/:id/status', async c => {
     entityType: 'demand',
     entityId: id,
     actorId: guard.userId,
-    metadata: { status_change: parsed.data.status, from: activity.from_status, to: parsed.data.status },
+    metadata: {
+      status_change: parsed.data.status,
+      from: activity.from_status,
+      to: parsed.data.status,
+    },
   });
   return c.json({ demand: updated });
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/forge/demands/:id/run
+//
+// "Disparar RUN" button on the HarnessOS Console Kanban — triggers a
+// workflow run against the codebase of the demand. The run is linked to
+// the demand via `workflow_run.demand_id` (set by the dispatch chain),
+// which lets the existing audit-trail hooks do two things for free:
+//
+//   1. Fire `run_started` activity on the demand (visible in the
+//      DemandTimelineModal).
+//   2. On completion / failure, auto-advance the demand's status
+//      (`completeWorkflowRun` moves backlog → triagem → requisitos →
+//      em_andamento forward-only; `failWorkflowRun` sets 'bloqueada').
+//
+// So the human just clicks the button; the demand card updates itself
+// as the Builder works through it.
+// ---------------------------------------------------------------------------
+const triggerRunBodySchema = z
+  .object({
+    workflow: z.string().min(1).max(128),
+    message: z.string().min(1).max(8000),
+    triggered_by: z.enum(['chat', 'api', 'cron', 'auto', 'manual']).optional().default('manual'),
+  })
+  .openapi('TriggerDemandRunBody');
+
+demands.post('/:id/run', async c => {
+  const guard = await requireWebPermission(c, 'admin:users');
+  if ('error' in guard) return guard.error;
+  const id = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+  const parsed = triggerRunBodySchema.safeParse(body);
+  if (!parsed.success) return apiError(c, 400, 'Invalid run body', parsed.error.message);
+
+  const demand = await demandsDb.getDemandById(id);
+  if (!demand) return apiError(c, 404, 'Demand not found');
+
+  // A demand can only be run if it has a codebase attached (otherwise we
+  // don't know where to dispatch the workflow).
+  if (!demand.codebase_id) {
+    return apiError(
+      c,
+      400,
+      'Demand has no codebase attached — cannot dispatch a workflow run without a target repo'
+    );
+  }
+
+  // Audit: the "disparar" click — we record it BEFORE the actual dispatch
+  // so the action is captured even if the dispatch fails downstream.
+  await recordAuditLog({
+    action: 'demand.run_dispatched',
+    entityType: 'demand',
+    entityId: id,
+    actorId: guard.userId,
+    metadata: {
+      workflow: parsed.data.workflow,
+      triggered_by: parsed.data.triggered_by,
+      codebase_id: demand.codebase_id,
+    },
+  });
+
+  try {
+    const platformConvId = `web-demand-${id}-${String(Date.now())}`;
+    const fullMessage = `/workflow run ${parsed.data.workflow} ${parsed.data.message}`;
+    // The orchestrator's handleMessage picks up demandId + triggeredBy
+    // via the HandleMessageContext and threads them all the way to
+    // `createWorkflowRun`, so the workflow_run row gets `demand_id` set
+    // and the auto-progress hooks (completeWorkflowRun / failWorkflowRun)
+    // advance the demand's status when the run finishes.
+    //
+    // Fire-and-forget: the HTTP response returns immediately while the
+    // orchestrator's pre-create + executeWorkflow chain runs in the
+    // background. The user sees the demand card auto-progress via the
+    // demand_activities table (which the hooks populate on completion).
+    void handleMessage(noopDemandAdapter, platformConvId, fullMessage, {
+      userId: guard.userId,
+      demandId: id,
+      triggeredBy: parsed.data.triggered_by,
+    }).catch((err: Error) => {
+      // Audit-log the failure so a silent dispatch error is visible.
+      log.error(
+        { err, demandId: id, workflow: parsed.data.workflow },
+        'demand.run_dispatch_failed'
+      );
+    });
+    return c.json({
+      accepted: true,
+      status: 'dispatched',
+      demand_id: id,
+      workflow: parsed.data.workflow,
+    });
+  } catch (e: unknown) {
+    const err = e as Error;
+    return apiError(c, 500, `Failed to dispatch run: ${err.message}`);
+  }
 });
 
 export default demands;

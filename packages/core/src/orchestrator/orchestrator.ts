@@ -278,6 +278,24 @@ export interface WorkflowRoutingContext {
    */
   readonly userId?: string;
   /**
+   * FORGE demand ID — when set, the workflow_run row gets `demand_id` and
+   * `triggered_by` populated, the FORGE audit-trail hook fires
+   * `run_started` activity on the demand, and the auto-progress logic in
+   * `completeWorkflowRun` / `failWorkflowRun` advances the demand's
+   * status when the run finishes (forward-only). Same field as
+   * `HandleMessageContext.demandId` — threaded verbatim through the
+   * dispatch chain so a "Disparar RUN" button on a demand auto-archives
+   * itself in the audit trail and advances the card.
+   */
+  readonly demandId?: string;
+  /**
+   * FORGE audit-trail — origin of the run trigger. Defaults to `'chat'`
+   * for chat-driven runs, `'manual'` for human-clicked "Disparar RUN"
+   * buttons, `'auto'` for builder-driven triggers. Mirrors the enum
+   * accepted by `createWorkflowRun` in @archon/core/db/workflows.
+   */
+  readonly triggeredBy?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
+  /**
    * Discovery source of the workflow — telemetry only (bundled workflows
    * report their real name, custom ones report "custom"). Optional; defaults
    * to the privacy-safe "custom" treatment when not provided.
@@ -400,6 +418,11 @@ export async function dispatchBackgroundWorkflow(
       metadata: ctx.issueContext ? { github_context: ctx.issueContext } : {},
       parent_conversation_id: ctx.conversationDbId,
       user_id: ctx.userId,
+      // FORGE audit-trail — link this background run to the demand the
+      // user clicked "Disparar RUN" on. The auto-progress hooks in
+      // `completeWorkflowRun` / `failWorkflowRun` read this column.
+      demand_id: ctx.demandId,
+      triggered_by: ctx.triggeredBy,
     });
   } catch (error) {
     const err = error as Error;
@@ -428,6 +451,12 @@ export async function dispatchBackgroundWorkflow(
             userId: ctx.userId,
             source: ctx.source,
             baseBranch: codebaseBaseBranch,
+            // FORGE audit-trail — same demand linkage, threaded one
+            // layer deeper so the executor's createWorkflowRun call
+            // (when preCreatedRun is undefined on a resume path) inherits
+            // the same demand_id + triggered_by.
+            demandId: ctx.demandId,
+            triggeredBy: ctx.triggeredBy,
           }
         );
         // Surface workflow output to parent conversation as a result card

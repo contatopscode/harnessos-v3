@@ -19,11 +19,15 @@ import { History, Search, Filter } from 'lucide-react';
 import { listAuditLog, actionLabel, type AuditLogEntry } from '../skills/audit-log';
 
 const FILTER_GROUPS: { id: string; label: string; match: (a: string) => boolean }[] = [
-  { id: 'all',   label: 'Tudo',  match: () => true },
+  { id: 'all', label: 'Tudo', match: () => true },
   { id: 'login', label: 'Login', match: a => a.startsWith('login.') || a === 'logout' },
-  { id: 'crud',  label: 'CRUD',  match: a => a.endsWith('.created') || a.endsWith('.updated') || a.endsWith('.deleted') },
-  { id: 'rbac',  label: 'RBAC',  match: a => a.startsWith('rbac.') },
-  { id: 'invite',label: 'Convites', match: a => a.startsWith('invite.') },
+  {
+    id: 'crud',
+    label: 'CRUD',
+    match: a => a.endsWith('.created') || a.endsWith('.updated') || a.endsWith('.deleted'),
+  },
+  { id: 'rbac', label: 'RBAC', match: a => a.startsWith('rbac.') },
+  { id: 'invite', label: 'Convites', match: a => a.startsWith('invite.') },
 ];
 
 export function AuditLogPage(): ReactElement {
@@ -53,12 +57,19 @@ export function AuditLogPage(): ReactElement {
         if (cancelled) return;
         setLoading(false);
       });
-    return () => {
+    return (): void => {
       cancelled = true;
     };
   }, []);
 
-  const group = FILTER_GROUPS.find(g => g.id === filter) ?? FILTER_GROUPS[0]!;
+  // FILTER_GROUPS is a module-level constant populated with 5 entries
+  // (see top of file) — [0] is the "all" fallback. We use a runtime
+  // guard so the type stays non-undefined without a non-null assertion
+  // (which is forbidden by the ESLint config).
+  const fallbackGroup: (typeof FILTER_GROUPS)[number] = FILTER_GROUPS[0]
+    ? FILTER_GROUPS[0]
+    : { id: 'all', label: 'Tudo', match: () => true };
+  const group = FILTER_GROUPS.find(g => g.id === filter) ?? fallbackGroup;
   const filtered = entries
     .filter(e => group.match(e.action))
     .filter(e => {
@@ -86,8 +97,8 @@ export function AuditLogPage(): ReactElement {
           </span>
         </div>
         <p className="text-sm text-text-secondary">
-          Tudo, absolutamente tudo: logins, CRUD, RBAC, convites. Filtros
-          abaixo ajudam a encontrar o evento que você procura.
+          Tudo, absolutamente tudo: logins, CRUD, RBAC, convites. Filtros abaixo ajudam a encontrar
+          o evento que você procura.
         </p>
       </header>
 
@@ -115,7 +126,10 @@ export function AuditLogPage(): ReactElement {
           })}
         </div>
         <div className="relative flex-1 min-w-[200px]">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
+          <Search
+            size={14}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary"
+          />
           <input
             type="search"
             value={search}
@@ -187,9 +201,7 @@ export function AuditLogPage(): ReactElement {
                       {e.actor_email ? (
                         <div>
                           <div className="font-medium">{e.actor_email}</div>
-                          {e.ip && (
-                            <div className="text-[10px] text-text-tertiary">IP {e.ip}</div>
-                          )}
+                          {e.ip && <div className="text-[10px] text-text-tertiary">IP {e.ip}</div>}
                         </div>
                       ) : (
                         <span className="text-text-tertiary">system</span>
@@ -244,9 +256,7 @@ function summarizeMeta(meta: Record<string, unknown>): string {
   const keys = Object.keys(meta);
   if (keys.length === 0) return '—';
   // Pick the first 2 most informative keys
-  const interesting = keys
-    .filter(k => k !== 'event' && k !== 'source')
-    .slice(0, 2);
+  const interesting = keys.filter(k => k !== 'event' && k !== 'source').slice(0, 2);
   return interesting
     .map(k => {
       const v = meta[k];

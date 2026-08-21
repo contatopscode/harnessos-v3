@@ -148,7 +148,7 @@ timeline.get('/:id/timeline', async c => {
       kind: 'run',
       at: String(r.started_at),
       title: `Run: ${String(r.workflow_name)} [${String(r.status)}]`,
-      detail: truncate(String(r.user_message ?? ''), 200),
+      detail: truncate((r.user_message as string | null) ?? '', 200),
       run_id: String(r.id),
       run_status: String(r.status),
       run_workflow_name: String(r.workflow_name),

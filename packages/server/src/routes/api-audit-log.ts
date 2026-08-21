@@ -22,7 +22,11 @@
 import { Hono } from 'hono';
 import { requireWebPermission } from '../auth/rbac';
 import * as auditDb from '@archon/core/db/audit-log';
-import { listAuditLogOptionsSchema, type ListAuditLogResponse, type EntityAuditLogResponse } from '@archon/core/schemas';
+import {
+  listAuditLogOptionsSchema,
+  type ListAuditLogResponse,
+  type EntityAuditLogResponse,
+} from '@archon/core/schemas';
 
 const audit = new Hono();
 

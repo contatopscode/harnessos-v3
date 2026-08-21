@@ -47,6 +47,11 @@ export const auditLogActionSchema = z.enum([
   'demand.created',
   'demand.updated',
   'demand.deleted',
+  // Demand → workflow run dispatch ("Disparar RUN" button on the Kanban).
+  // Distinct from the auto-fired `run_started` demand_activity because
+  // the dispatch click is the human action; the run_started activity
+  // is the system consequence.
+  'demand.run_dispatched',
   // Pipeline links (demand ↔ workflow)
   'pipeline_link.created',
   'pipeline_link.deleted',

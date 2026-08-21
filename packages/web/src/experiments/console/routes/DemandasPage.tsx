@@ -42,6 +42,10 @@ import {
   updateDemandStatus,
   getDemandTimeline,
   addNote,
+  createDemand as apiCreateDemand,
+  runDemand as apiRunDemand,
+  type CreateDemandBody,
+  type RunDemandBody,
   type Demand,
   type DemandStatus,
   type Client,
@@ -67,6 +71,14 @@ export function DemandasPage(): ReactElement {
   const [clientId, setClientId] = useState('');
   const [codebaseId, setCodebaseId] = useState('');
   const [timelineFor, setTimelineFor] = useState<Demand | null>(null);
+  // "+ Nova" modal — opens a CreateDemandModal. New demands always start
+  // in the Backlog column (backend forces status='backlog' on POST).
+  const [createOpen, setCreateOpen] = useState(false);
+  // "Disparar RUN" modal — opens a RunDemandModal for the clicked demand.
+  // The run is fire-and-forget; the user follows progress via the
+  // auto-advance hooks (completeWorkflowRun / failWorkflowRun) and the
+  // demand_activities table surfaced in the timeline.
+  const [runFor, setRunFor] = useState<Demand | null>(null);
 
   const [clients, setClients] = useState<Client[]>([]);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
@@ -199,8 +211,10 @@ export function DemandasPage(): ReactElement {
           </div>
           <button
             type="button"
-            className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface px-2.5 py-1.5 text-[11.5px] font-medium text-text-secondary transition hover:border-accent-bright/60 hover:text-text-primary"
-            title="Em breve"
+            onClick={() => {
+              setCreateOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md bg-accent-bright px-2.5 py-1.5 text-[11.5px] font-medium text-white shadow-sm transition hover:bg-accent-hover"
           >
             <Plus className="h-3.5 w-3.5" />
             Nova
@@ -281,6 +295,9 @@ export function DemandasPage(): ReactElement {
               onOpenTimeline={d => {
                 setTimelineFor(d);
               }}
+              onOpenRun={d => {
+                setRunFor(d);
+              }}
               movePendingId={movePendingId}
             />
           ))}
@@ -294,6 +311,34 @@ export function DemandasPage(): ReactElement {
           setTimelineFor(null);
         }}
       />
+
+      <CreateDemandModal
+        open={createOpen}
+        clients={clients}
+        projects={projects}
+        onClose={() => {
+          setCreateOpen(false);
+        }}
+        onCreated={() => {
+          setCreateOpen(false);
+          refetchBoard();
+        }}
+      />
+
+      <RunDemandModal
+        demand={runFor}
+        open={runFor !== null}
+        onClose={() => {
+          setRunFor(null);
+        }}
+        onDispatched={() => {
+          setRunFor(null);
+          // Refetch is not strictly required (the run is fire-and-forget),
+          // but a quick re-read makes the latest activity counters feel
+          // snappy. The run_started activity lands within ~1s of dispatch.
+          refetchBoard();
+        }}
+      />
     </div>
   );
 }
@@ -305,6 +350,7 @@ interface ColumnProps {
   demands: Demand[];
   onMove: (id: string, status: DemandStatus) => void;
   onOpenTimeline: (demand: Demand) => void;
+  onOpenRun: (demand: Demand) => void;
   movePendingId: string | null;
 }
 
@@ -315,6 +361,7 @@ function Column({
   demands,
   onMove,
   onOpenTimeline,
+  onOpenRun,
   movePendingId,
 }: ColumnProps): ReactElement {
   return (
@@ -343,6 +390,7 @@ function Column({
               currentStatus={status}
               onMove={onMove}
               onOpenTimeline={onOpenTimeline}
+              onOpenRun={onOpenRun}
               movePending={movePendingId === d.id}
             />
           ))
@@ -357,6 +405,7 @@ interface CardProps {
   currentStatus: DemandStatus;
   onMove: (id: string, status: DemandStatus) => void;
   onOpenTimeline: (demand: Demand) => void;
+  onOpenRun: (demand: Demand) => void;
   movePending: boolean;
 }
 
@@ -365,6 +414,7 @@ function Card({
   currentStatus,
   onMove,
   onOpenTimeline,
+  onOpenRun,
   movePending,
 }: CardProps): ReactElement {
   const [open, setOpen] = useState(false);
@@ -437,6 +487,27 @@ function Card({
               </button>
             ))}
           </div>
+          {/* "Disparar RUN" — dispatches a workflow run linked to this demand.
+              Disabled when the demand has no codebase (the run needs a target
+              repo). Auto-progress (completeWorkflowRun hook) advances the
+              card on completion, so the user does NOT need to move it. */}
+          <button
+            type="button"
+            disabled={!demand.codebase_id}
+            onClick={e => {
+              e.stopPropagation();
+              onOpenRun(demand);
+            }}
+            title={
+              demand.codebase_id
+                ? 'Disparar workflow run (auto-avança o card)'
+                : 'Demanda sem projeto — associe um projeto primeiro'
+            }
+            className="flex w-full items-center justify-center gap-1 rounded-sm border border-success/40 bg-success/10 px-2 py-1 text-[10px] font-medium text-success transition hover:bg-success/20 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <PlayCircle className="h-3 w-3" aria-hidden />
+            Disparar RUN
+          </button>
           <button
             type="button"
             onClick={e => {
@@ -687,6 +758,447 @@ function ErrorState({ error }: { error: Error }): ReactElement {
     <div className="m-6 rounded-[12px] border border-error/40 bg-error/5 p-5">
       <div className="text-[13px] font-semibold text-error">Erro ao carregar demandas</div>
       <div className="mt-1 text-[12px] text-text-secondary">{error.message}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CreateDemandModal — "+ Nova" modal.
+//
+// New demands always start in the Backlog column (backend forces
+// status='backlog' on POST; the schema has no `status` field on create).
+// From the Backlog the user clicks "Disparar RUN" on the card to advance
+// the demand through the pipeline — the auto-progress hooks
+// (`completeWorkflowRun` / `failWorkflowRun`) update the status
+// forward-only as the Builder works.
+// ---------------------------------------------------------------------------
+interface CreateDemandModalProps {
+  open: boolean;
+  clients: Client[];
+  projects: ProjectSummary[];
+  onClose: () => void;
+  onCreated: () => void;
+}
+
+function CreateDemandModal({
+  open,
+  clients,
+  projects,
+  onClose,
+  onCreated,
+}: CreateDemandModalProps): ReactElement | null {
+  const [slug, setSlug] = useState('');
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [clientId, setClientId] = useState('');
+  const [codebaseId, setCodebaseId] = useState('');
+  const [priority, setPriority] = useState<'baixa' | 'media' | 'alta' | 'urgente'>('media');
+  const [dueDate, setDueDate] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Reset form whenever the modal closes — keeps stale input from
+  // leaking into the next open.
+  useEffect(() => {
+    if (open) return;
+    setSlug('');
+    setTitle('');
+    setDescription('');
+    setClientId('');
+    setCodebaseId('');
+    setPriority('media');
+    setDueDate('');
+    setSubmitError(null);
+  }, [open]);
+
+  if (!open) return null;
+
+  // Filter projects to the selected client so a PSCODE demand can't
+  // accidentally point at an "Another Client" project.
+  const filteredProjects = clientId ? projects.filter(p => p.client_id === clientId) : projects;
+
+  const canSubmit = slug.trim().length >= 3 && title.trim().length > 0 && clientId !== '';
+
+  function onSubmitForm(e: React.FormEvent): void {
+    e.preventDefault();
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    const body: CreateDemandBody = {
+      slug: slug.trim().toUpperCase(),
+      title: title.trim(),
+      client_id: clientId,
+      ...(codebaseId ? { codebase_id: codebaseId } : {}),
+      ...(description.trim() ? { description: description.trim() } : {}),
+      priority,
+      ...(dueDate ? { due_date: new Date(dueDate).toISOString() } : {}),
+    };
+    apiCreateDemand(body)
+      .then(() => {
+        onCreated();
+      })
+      .catch((err: unknown) => {
+        setSubmitError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        setSubmitting(false);
+      });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[90vh] w-full max-w-[640px] flex-col rounded-[12px] border border-border bg-surface shadow-2xl"
+        onClick={e => {
+          e.stopPropagation();
+        }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <Plus className="h-4 w-4 text-accent-bright" aria-hidden />
+              <h2 className="text-[15px] font-semibold text-text-primary">Nova demanda</h2>
+            </div>
+            <p className="mt-1 text-[11.5px] text-text-tertiary">
+              Criada como <span className="font-mono text-accent-bright">backlog</span>. O Builder
+              do HarnessOS move a demanda pelas etapas do Kanban conforme trabalha.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-text-tertiary transition hover:bg-surface-hover hover:text-text-primary"
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmitForm} className="flex flex-col overflow-hidden">
+          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                  Slug
+                </span>
+                <input
+                  value={slug}
+                  onChange={e => {
+                    setSlug(e.target.value);
+                  }}
+                  placeholder="PSCODE-EC-FSM-2026-013"
+                  required
+                  minLength={3}
+                  pattern="[A-Z0-9][A-Z0-9-]*"
+                  className="mt-1 w-full rounded-md border border-border bg-surface-inset px-3 py-1.5 font-mono text-[12.5px] text-text-primary outline-none focus:border-accent-bright"
+                />
+              </label>
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                  Prioridade
+                </span>
+                <select
+                  value={priority}
+                  onChange={e => {
+                    setPriority(e.target.value as typeof priority);
+                  }}
+                  className="mt-1 w-full rounded-md border border-border bg-surface-inset px-2.5 py-1.5 text-[12.5px] text-text-primary outline-none focus:border-accent-bright"
+                >
+                  <option value="baixa">baixa</option>
+                  <option value="media">média</option>
+                  <option value="alta">alta</option>
+                  <option value="urgente">urgente</option>
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                Título
+              </span>
+              <input
+                value={title}
+                onChange={e => {
+                  setTitle(e.target.value);
+                }}
+                placeholder="Implementar feature X no projeto Y"
+                required
+                className="mt-1 w-full rounded-md border border-border bg-surface-inset px-3 py-1.5 text-[12.5px] text-text-primary outline-none focus:border-accent-bright"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                Descrição
+              </span>
+              <textarea
+                value={description}
+                onChange={e => {
+                  setDescription(e.target.value);
+                }}
+                rows={3}
+                placeholder="Contexto, critérios de aceitação, links…"
+                className="mt-1 w-full resize-none rounded-md border border-border bg-surface-inset px-3 py-2 text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-accent-bright"
+              />
+            </label>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                  Cliente
+                </span>
+                <select
+                  value={clientId}
+                  onChange={e => {
+                    setClientId(e.target.value);
+                    setCodebaseId('');
+                  }}
+                  required
+                  className="mt-1 w-full rounded-md border border-border bg-surface-inset px-2.5 py-1.5 text-[12.5px] text-text-primary outline-none focus:border-accent-bright"
+                >
+                  <option value="">Selecione um cliente…</option>
+                  {clients.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                  Projeto
+                </span>
+                <select
+                  value={codebaseId}
+                  onChange={e => {
+                    setCodebaseId(e.target.value);
+                  }}
+                  disabled={filteredProjects.length === 0}
+                  className="mt-1 w-full rounded-md border border-border bg-surface-inset px-2.5 py-1.5 text-[12.5px] text-text-primary outline-none disabled:opacity-50"
+                >
+                  <option value="">(sem projeto)</option>
+                  {filteredProjects.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                Data limite (opcional)
+              </span>
+              <input
+                type="date"
+                value={dueDate}
+                onChange={e => {
+                  setDueDate(e.target.value);
+                }}
+                className="mt-1 w-full rounded-md border border-border bg-surface-inset px-3 py-1.5 text-[12.5px] text-text-primary outline-none focus:border-accent-bright"
+              />
+            </label>
+
+            {submitError && (
+              <p className="rounded-md border border-error/30 bg-error/5 px-3 py-2 text-[12px] text-error">
+                {submitError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border p-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary transition hover:text-text-primary disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit || submitting}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent-bright px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Plus className="h-3.5 w-3.5" />
+              )}
+              Criar como backlog
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RunDemandModal — "Disparar RUN" modal.
+//
+// Triggers a workflow run linked to the demand via
+// `workflow_run.demand_id`. The run is fire-and-forget: the HTTP
+// response returns immediately, and the demand's status auto-advances
+// as the run moves through its lifecycle:
+//   - run_started      → activity row logged
+//   - run_completed    → demand status advances forward
+//   - run_failed       → demand status set to 'bloqueada'
+// The user does NOT need to move the card manually after this.
+// ---------------------------------------------------------------------------
+interface RunDemandModalProps {
+  demand: Demand | null;
+  open: boolean;
+  onClose: () => void;
+  onDispatched: () => void;
+}
+
+function RunDemandModal({
+  demand,
+  open,
+  onClose,
+  onDispatched,
+}: RunDemandModalProps): ReactElement | null {
+  const [workflow, setWorkflow] = useState('implement');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Reset form whenever the modal closes — each demand is its own scope.
+  useEffect(() => {
+    if (open) return;
+    setWorkflow('implement');
+    setMessage('');
+    setSubmitError(null);
+  }, [open]);
+
+  if (!open || !demand) return null;
+
+  const canSubmit = workflow.trim().length > 0 && message.trim().length > 0;
+
+  function onSubmitForm(e: React.FormEvent): void {
+    e.preventDefault();
+    if (!canSubmit || submitting || !demand) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    const body: RunDemandBody = {
+      workflow: workflow.trim(),
+      message: message.trim(),
+      triggered_by: 'manual',
+    };
+    apiRunDemand(demand.id, body)
+      .then(() => {
+        onDispatched();
+      })
+      .catch((err: unknown) => {
+        setSubmitError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        setSubmitting(false);
+      });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[90vh] w-full max-w-[560px] flex-col rounded-[12px] border border-border bg-surface shadow-2xl"
+        onClick={e => {
+          e.stopPropagation();
+        }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border p-4">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <PlayCircle className="h-4 w-4 text-success" aria-hidden />
+              <h2 className="text-[15px] font-semibold text-text-primary">Disparar RUN</h2>
+            </div>
+            <p className="mt-1 truncate font-mono text-[11.5px] text-text-tertiary">
+              {demand.slug} — {demand.title}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-text-tertiary transition hover:bg-surface-hover hover:text-text-primary"
+            aria-label="Fechar"
+          >
+            <X className="h-4 w-4" aria-hidden />
+          </button>
+        </div>
+
+        <form onSubmit={onSubmitForm} className="flex flex-col overflow-hidden">
+          <div className="flex-1 space-y-3 overflow-y-auto p-4">
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                Workflow
+              </span>
+              <input
+                value={workflow}
+                onChange={e => {
+                  setWorkflow(e.target.value);
+                }}
+                placeholder="implement"
+                required
+                className="mt-1 w-full rounded-md border border-border bg-surface-inset px-3 py-1.5 font-mono text-[12.5px] text-text-primary outline-none focus:border-accent-bright"
+              />
+            </label>
+            <label className="block">
+              <span className="text-[11.5px] font-medium uppercase tracking-wider text-text-tertiary">
+                Mensagem inicial
+              </span>
+              <textarea
+                value={message}
+                onChange={e => {
+                  setMessage(e.target.value);
+                }}
+                rows={4}
+                required
+                placeholder="Contexto, objetivo da run, referências…"
+                className="mt-1 w-full resize-none rounded-md border border-border bg-surface-inset px-3 py-2 text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-accent-bright"
+              />
+            </label>
+            <p className="text-[11px] text-text-tertiary">
+              A run é disparada em segundo plano — o card avança automaticamente conforme o Builder
+              trabalha.
+            </p>
+            {submitError && (
+              <p className="rounded-md border border-error/30 bg-error/5 px-3 py-2 text-[12px] text-error">
+                {submitError}
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 border-t border-border p-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="rounded-md border border-border bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary transition hover:text-text-primary disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={!canSubmit || submitting}
+              className="inline-flex items-center gap-1.5 rounded-md bg-success px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-success/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <PlayCircle className="h-3.5 w-3.5" />
+              )}
+              Disparar
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
