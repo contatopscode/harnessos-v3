@@ -1,6 +1,15 @@
 import type { JSX } from 'react';
 import { NavLink } from 'react-router';
-import { Users, FolderKanban, Trello, Receipt, MessageSquare, LogOut, Flame } from 'lucide-react';
+import {
+  Users,
+  FolderKanban,
+  Trello,
+  Receipt,
+  MessageSquare,
+  LogOut,
+  Flame,
+  Activity,
+} from 'lucide-react';
 import { useSession, signOut } from '../lib/auth-client';
 import { cn } from '../lib/cn';
 
@@ -14,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/clientes', label: 'Clientes', icon: Users },
   { to: '/projetos', label: 'Projetos', icon: FolderKanban },
   { to: '/demandas', label: 'Demandas', icon: Trello },
+  { to: '/runs', label: 'Runs', icon: Activity },
   { to: '/custos', label: 'Custos', icon: Receipt },
   { to: '/chat', label: 'Chat', icon: MessageSquare },
 ];

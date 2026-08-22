@@ -11,6 +11,7 @@ import { SkillsPage } from './routes/SkillsPage';
 import { CustosPage } from './routes/CustosPage';
 import { TracesPage } from './routes/TracesPage';
 import { ChatPage } from './routes/ChatPage';
+import { RunsPage } from './routes/RunsPage';
 import { NotFoundPage } from './routes/NotFoundPage';
 
 export function App(): JSX.Element {
@@ -28,6 +29,7 @@ export function App(): JSX.Element {
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/custos" element={<CustosPage />} />
           <Route path="/traces" element={<TracesPage />} />
+          <Route path="/runs" element={<RunsPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

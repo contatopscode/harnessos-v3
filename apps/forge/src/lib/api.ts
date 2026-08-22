@@ -259,6 +259,58 @@ export interface ProjectSummary {
   repository_url: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Workflow runs (enriched dashboard shape)
+// ---------------------------------------------------------------------------
+// Subset of @archon/core/schemas/workflow-run#dashboardWorkflowRunSchema —
+// the fields we actually use in the FORGE UI. Anything not surfaced here
+// still arrives in the response and is ignored by TypeScript.
+export type WorkflowRunStatus =
+  | 'pending'
+  | 'running'
+  | 'paused'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+export type WorkflowStepStatus = 'running' | 'completed' | 'failed';
+export interface DashboardRun {
+  id: string;
+  workflow_name: string;
+  conversation_id: string;
+  codebase_id: string | null;
+  codebase_name: string | null;
+  current_step_index: number | null;
+  current_step_name: string | null;
+  current_step_status: WorkflowStepStatus | null;
+  total_steps: number | null;
+  agents_completed: number | null;
+  agents_failed: number | null;
+  agents_total: number | null;
+  status: WorkflowRunStatus;
+  user_message: string;
+  metadata: Record<string, unknown>;
+  started_at: string;
+  completed_at: string | null;
+  last_activity_at: string | null;
+  working_path: string | null;
+  user_id: string | null;
+  demand_id: string | null;
+  triggered_by: string | null;
+}
+export interface DashboardRunsResponse {
+  runs: DashboardRun[];
+  total: number;
+  counts: {
+    all: number;
+    running: number;
+    completed: number;
+    failed: number;
+    cancelled: number;
+    pending: number;
+    paused: number;
+  };
+}
+
 export type AgentRunStatus =
   | 'queued'
   | 'running'
@@ -560,8 +612,30 @@ export const api = {
       request<{ ok: true }>(`/api/forge/projects/${id}`, { method: 'DELETE' }),
   },
   runs: {
-    list: (filter?: { codebaseId?: string; status?: string; limit?: number }) =>
-      request<{ runs: AgentRun[] }>('/api/forge/runs', { query: filter }),
+    /**
+     * Enriched workflow runs (the same payload as the Command Center
+     * dashboard). Includes `codebase_name`, `current_step_name`,
+     * `total_steps`, `agents_completed/failed/total` so the FORGE can
+     * show live stage progress without joining clients/agents in the
+     * UI. Polled every 3s in `RunsPage` to keep the cards moving
+     * without a WebSocket.
+     */
+    dashboardList: (filter?: {
+      status?: string;
+      codebaseId?: string;
+      search?: string;
+      limit?: number;
+      offset?: number;
+    }) =>
+      request<DashboardRunsResponse>('/api/dashboard/runs', {
+        query: {
+          ...(filter?.status ? { status: filter.status } : {}),
+          ...(filter?.codebaseId ? { codebaseId: filter.codebaseId } : {}),
+          ...(filter?.search ? { search: filter.search } : {}),
+          ...(filter?.limit !== undefined ? { limit: String(filter.limit) } : {}),
+          ...(filter?.offset !== undefined ? { offset: String(filter.offset) } : {}),
+        },
+      }),
   },
   chat: {
     ask: (body: { message: string; codebase_id?: string; conversation_id?: string }) =>
