@@ -3555,6 +3555,7 @@ export function registerApiRoutes(
 
     let message: string;
     let conversationId: string;
+    let demandId: string | undefined;
     let savedFiles: AttachedFile[] = [];
     let uploadDir = '';
 
@@ -3579,6 +3580,12 @@ export function registerApiRoutes(
       }
       message = rawMessage;
       conversationId = rawConv;
+      // demandId is JSON-only (form-data callers — Console — don't set it
+      // yet). FORGE always sends JSON. Empty string / non-string → ignore.
+      const rawDemand = body.demandId;
+      if (typeof rawDemand === 'string' && /^[0-9a-f-]{36}$/i.test(rawDemand)) {
+        demandId = rawDemand;
+      }
 
       const rawFiles = body.files;
       const fileList: (string | File)[] = Array.isArray(rawFiles)
@@ -3601,7 +3608,11 @@ export function registerApiRoutes(
         );
       }
     } else {
-      let body: { conversationId?: unknown; message?: unknown };
+      let body: {
+        conversationId?: unknown;
+        message?: unknown;
+        demandId?: unknown;
+      };
       try {
         body = await c.req.json();
       } catch (parseErr: unknown) {
@@ -3616,6 +3627,15 @@ export function registerApiRoutes(
       }
       conversationId = body.conversationId;
       message = body.message;
+      // Optional FORGE demand id. Must look like a UUID; reject anything
+      // else silently so a stray string in the body doesn't poison the
+      // workflow_run row.
+      if (
+        typeof body.demandId === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.demandId)
+      ) {
+        demandId = body.demandId;
+      }
     }
 
     try {
@@ -3657,8 +3677,14 @@ export function registerApiRoutes(
       }
 
       const fullMessage = `/workflow run ${workflowName} ${message}`;
-      const extraContext: Omit<HandleMessageContext, 'isolationHints'> =
-        savedFiles.length > 0 ? { userId, attachedFiles: savedFiles } : { userId };
+      const extraContext: Omit<HandleMessageContext, 'isolationHints'> = {
+        userId,
+        ...(savedFiles.length > 0 ? { attachedFiles: savedFiles } : {}),
+        // FORGE audit-trail — when the click originated from a demand
+        // card, the orchestrator threads this into the workflow_run row
+        // and the auto-progress hooks flip the demand on run completion.
+        ...(demandId !== undefined ? { demandId, triggeredBy: 'manual' as const } : {}),
+      };
       const filesToCleanup = savedFiles.length > 0 ? { files: savedFiles, uploadDir } : undefined;
       const result = await dispatchToOrchestrator(
         conversationId,

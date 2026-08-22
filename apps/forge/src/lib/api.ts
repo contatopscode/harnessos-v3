@@ -449,6 +449,29 @@ export const api = {
         `/api/forge/demands/${id}/activities`,
         { method: 'POST', body }
       ),
+    /**
+     * Dispatch a workflow run pinned to this demand. Posts to the same
+     * `/api/workflows/:name/run` endpoint the Console uses, but with
+     * `demandId` in the body so the orchestrator can populate
+     * `workflow_runs.demand_id` and the auto-progress hooks advance the
+     * demand when the run finishes. The "Disparar RUN" button on each
+     * kanban card uses this; without it, the kanban never moves.
+     */
+    run: (id: string, body: { workflow: string; message: string; files?: File[] }) =>
+      request<{ accepted: boolean; status: string }>(
+        `/api/workflows/${encodeURIComponent(body.workflow)}/run`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            conversationId: '', // FORGE runs use the demand's code-link; orchestrator creates a fresh conversation
+            message: body.message,
+            demandId: id,
+            ...(body.files !== undefined && body.files.length > 0
+              ? { attachedFiles: body.files }
+              : {}),
+          }),
+        }
+      ),
   },
   sprints: {
     list: (filter?: { clientId?: string }) =>

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Demand, type Client, type ProjectSummary, ApiError } from '../lib/api';
-import { Loader2, Plus, Search, Activity, History, Filter, X, AlertCircle } from 'lucide-react';
+import { Loader2, Plus, Search, Activity, History, Filter, X, AlertCircle, Play } from 'lucide-react';
 import { useState } from 'react';
 import type { JSX } from 'react';
 import { cn } from '../lib/cn';
@@ -262,6 +262,7 @@ interface CardProps {
 
 function Card({ demand, onOpenTimeline }: CardProps): JSX.Element {
   const [open, setOpen] = useState(false);
+  const [runOpen, setRunOpen] = useState(false);
   const priorityColor =
     demand.priority === 'urgente'
       ? 'var(--error)'
@@ -315,23 +316,146 @@ function Card({ demand, onOpenTimeline }: CardProps): JSX.Element {
         )}
       </div>
       {open && (
-        <div className="mt-2 border-t border-[var(--border)] pt-2 text-[10.5px]">
-          <p className="px-1 pb-1.5 text-[10px] text-[var(--text-tertiary)]">
+        <div className="mt-2 space-y-1 border-t border-[var(--border)] pt-2 text-[10.5px]">
+          <p className="px-1 pb-0.5 text-[10px] text-[var(--text-tertiary)]">
             Status controlado pelo Builder no HarnessOS. Abra a timeline para acompanhar.
           </p>
-          <button
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              onOpenTimeline(demand);
-            }}
-            className="flex w-full items-center justify-center gap-1 rounded-sm bg-[var(--brand-magenta)]/10 px-2 py-1 text-[10px] font-medium text-[var(--brand-magenta)] transition hover:bg-[var(--brand-magenta)]/20"
-          >
-            <History className="h-3 w-3" aria-hidden />
-            Ver timeline ({demand.runs_count + demand.messages_count} eventos)
-          </button>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                setRunOpen(o => !o);
+              }}
+              className="flex flex-1 items-center justify-center gap-1 rounded-sm bg-[var(--brand-magenta)]/10 px-2 py-1 text-[10px] font-medium text-[var(--brand-magenta)] transition hover:bg-[var(--brand-magenta)]/20"
+            >
+              <Play className="h-3 w-3" aria-hidden />
+              Disparar RUN
+            </button>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation();
+                onOpenTimeline(demand);
+              }}
+              className="flex flex-1 items-center justify-center gap-1 rounded-sm bg-[var(--surface-elevated)] px-2 py-1 text-[10px] font-medium text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)]"
+            >
+              <History className="h-3 w-3" aria-hidden />
+              Timeline
+            </button>
+          </div>
+          {runOpen && (
+            <RunInlineForm
+              demandId={demand.id}
+              onClose={() => {
+                setRunOpen(false);
+              }}
+            />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Inline mini-form for "Disparar RUN" — workflow picker + message +
+ * "Disparar" button. Lives inside the card to avoid modal sprawl for
+ * what is a quick, frequent action. Posts to api.demands.run() with
+ * `demandId` in the body so the orchestrator populates
+ * `workflow_runs.demand_id` and the auto-progress hooks advance the
+ * kanban when the run finishes.
+ */
+function RunInlineForm({
+  demandId,
+  onClose,
+}: {
+  demandId: string;
+  onClose: () => void;
+}): JSX.Element {
+  const qc = useQueryClient();
+  // (intentionally no `useQuery` here — workflow list is hard-coded
+  // for now; switch to a real `api.workflows.list()` once the
+  // /api/workflows index endpoint exposes a name+description shape.)
+  const [workflow, setWorkflow] = useState<string>('archon-assist');
+  const [message, setMessage] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (): Promise<void> => {
+    if (message.trim().length === 0) {
+      setError('Mensagem vazia');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.demands.run(demandId, { workflow, message: message.trim() });
+      // Re-pull the board so the new run card appears under the demand
+      // (server only updates last_run_id / runs_count, but a fresh fetch
+      // also picks up the auto-progress activity that lands ~ms later).
+      void qc.invalidateQueries({ queryKey: ['forge', 'demands'] });
+      void qc.invalidateQueries({ queryKey: ['forge', 'demands', 'board'] });
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Falha ao disparar run');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="mt-1 space-y-1 rounded border border-[var(--border)] bg-[var(--surface-inset)] p-2"
+      onClick={e => {
+        e.stopPropagation();
+      }}
+    >
+      <select
+        value={workflow}
+        onChange={e => {
+          setWorkflow(e.target.value);
+        }}
+        className="w-full rounded border border-[var(--border)] bg-[var(--surface)] px-1.5 py-1 text-[10.5px] text-[var(--text-primary)]"
+        aria-label="Workflow"
+      >
+        <option value="archon-assist">archon-assist (genérico)</option>
+        <option value="archon-architect">archon-architect</option>
+        <option value="archon-idea-to-pr">archon-idea-to-pr</option>
+        <option value="archon-create-issue">archon-create-issue</option>
+        <option value="archon-test-loop-dag">archon-test-loop-dag</option>
+        <option value="archon-interactive-prd">archon-interactive-prd</option>
+      </select>
+      <textarea
+        value={message}
+        onChange={e => {
+          setMessage(e.target.value);
+        }}
+        rows={3}
+        placeholder="O que você quer que o Builder faça?"
+        className="w-full resize-y rounded border border-[var(--border)] bg-[var(--surface)] px-1.5 py-1 text-[10.5px] text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] focus:border-[var(--brand-magenta)] focus:outline-none"
+      />
+      {error !== null && <p className="text-[10px] text-[var(--error)]">{error}</p>}
+      <div className="flex gap-1">
+        <button
+          type="button"
+          onClick={() => {
+            void submit();
+          }}
+          disabled={busy}
+          className="flex-1 rounded-sm bg-[var(--brand-magenta)] px-2 py-1 text-[10px] font-semibold text-white transition hover:bg-[var(--accent-hover)] disabled:opacity-50"
+        >
+          {busy ? 'Disparando…' : 'Disparar'}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="rounded-sm border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-[10px] text-[var(--text-secondary)] transition hover:bg-[var(--surface-hover)] disabled:opacity-50"
+        >
+          Cancelar
+        </button>
+      </div>
     </div>
   );
 }

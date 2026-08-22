@@ -22,6 +22,13 @@ export interface StartRunArgs {
   workflow: string;
   message: string;
   files?: File[];
+  /**
+   * Optional FORGE demand id. When the Console fires a run from a
+   * demand card (e.g. "Continuar" on a blocked demand), this wires
+   * the new workflow_run to the demand so the FORGE audit trail
+   * and auto-progress hooks (moveDemandFromRun) work end-to-end.
+   */
+  demandId?: string;
 }
 
 interface CreateConversationResponse {
@@ -33,6 +40,7 @@ export async function startRun({
   workflow,
   message,
   files,
+  demandId,
 }: StartRunArgs): Promise<void> {
   const conv = await requestJson<CreateConversationResponse>('/api/conversations', {
     method: 'POST',
@@ -44,7 +52,13 @@ export async function startRun({
   if (files === undefined || files.length === 0) {
     await requestJson<{ accepted: boolean; status: string }>(url, {
       method: 'POST',
-      body: JSON.stringify({ conversationId: conv.conversationId, message }),
+      body: JSON.stringify({
+        conversationId: conv.conversationId,
+        message,
+        // Server is defensive: anything that doesn't look like a UUID is
+        // dropped silently, so it's safe to forward a malformed value.
+        ...(demandId !== undefined ? { demandId } : {}),
+      }),
     });
     return;
   }
@@ -53,6 +67,9 @@ export async function startRun({
   const form = new FormData();
   form.append('conversationId', conv.conversationId);
   form.append('message', message);
+  if (demandId !== undefined) {
+    form.append('demandId', demandId);
+  }
   for (const file of files) {
     form.append('files', file, file.name);
   }

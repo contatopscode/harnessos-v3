@@ -592,6 +592,18 @@ interface WorkflowDispatchOptions {
   force?: boolean;
   resumeRunId?: string;
   resumeRun?: WorkflowRun;
+  /**
+   * FORGE demand id — when set, the resulting workflow_run row gets
+   * `demand_id` populated and the auto-progress hooks advance the demand
+   * when the run finishes. Threaded from `HandleMessageContext.demandId`
+   * through the dispatch chain.
+   */
+  demandId?: string;
+  /**
+   * FORGE audit-trail — origin of the run trigger. Mirrors the enum
+   * accepted by `createWorkflowRun` (`'chat' | 'api' | 'cron' | 'auto' | 'manual'`).
+   */
+  triggeredBy?: 'chat' | 'api' | 'cron' | 'auto' | 'manual';
 }
 
 const FAILED_RUN_PROMPT_PREVIEW_MAX = 160;
@@ -754,7 +766,7 @@ async function dispatchOrchestratorWorkflow(
         // happy, so remove it here before cloning into the same path. Only
         // nuke it if it's actually empty — anything with real content is left
         // alone (the user can decide what to do).
-        await clearEmptyDirIfPresent(codebase.default_cwd);
+        clearEmptyDirIfPresent(codebase.default_cwd);
         await ensureSource({
           owner: inferred.owner,
           repo: inferred.repo,
@@ -975,6 +987,13 @@ async function dispatchOrchestratorWorkflow(
         userId,
         source,
         baseBranch: codebaseBaseBranch,
+        // FORGE audit-trail — link the foreground run to the demand the
+        // user clicked "Disparar RUN" on. Threaded through to the
+        // workflow_run row + auto-progress hooks. The local variables
+        // were destructured at the top of `handleMessage` from the
+        // `context` parameter (no `ctx` object at this scope).
+        demandId,
+        triggeredBy,
       }
     );
   }
@@ -1399,6 +1418,12 @@ export async function handleMessage(
               force: result.workflow.force,
               resumeRunId: result.workflow.resumeRunId,
               resumeRun: result.workflow.resumeRun,
+              // FORGE audit-trail — thread the demand id from the
+              // handleMessage context into the dispatch options. This
+              // is the call site that bridges the deterministic
+              // `/workflow run` command path back to the kanban.
+              demandId,
+              triggeredBy,
             }
           );
         }
@@ -2911,10 +2936,12 @@ async function handleWorkflowRunCommand(
       isolationHints,
       userId,
       undefined, // source
-      // FORGE audit-trail — module-scope helper, demand linkage
-      // not threaded here. Same trade-off as the invocation path.
-      undefined, // demandId
-      undefined, // triggeredBy
+      // FORGE audit-trail — demand linkage threaded from options.
+      // Was hardcoded `undefined` before; the chain now plumbs the
+      // demand id end-to-end so a "Disparar RUN" click links the
+      // workflow_run to the kanban card.
+      options?.demandId,
+      options?.triggeredBy,
       options
     );
     return;

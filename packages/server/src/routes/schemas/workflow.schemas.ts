@@ -220,6 +220,17 @@ export const runWorkflowBodySchema = z
   .object({
     conversationId: z.string(),
     message: z.string(),
+    /**
+     * Optional FORGE demand id. When set, the workflow_run row gets
+     * `demand_id` populated and the auto-progress hooks in
+     * `completeWorkflowRun` / `failWorkflowRun` advance the demand's
+     * status as the run finishes (forward-only). UI surfaces link the
+     * run card to the demand row in the kanban board.
+     *
+     * Console does not pass this; FORGE passes it when the user clicks
+     * "Disparar RUN" on a specific demand card.
+     */
+    demandId: z.string().uuid().optional(),
   })
   .openapi('RunWorkflowBody');
 
