@@ -272,11 +272,27 @@ pub fn run() {
                     )));
                 }
             };
+            // Tauri 2 resource mapping: "web/dist" (relative to
+            // Contents/Resources/) → server reads via WEB_DIST_PATH.
+            // The server's default path lookup (parent of package)
+            // doesn't work because the standalone binary runs from
+            // Contents/MacOS/, not from packages/server/. We resolve
+            // the resource dir at runtime so this works whether the user
+            // installs to /Applications/, ~/Applications, or runs from
+            // a different location.
+            let web_dist_path = app
+                .path()
+                .resolve("web/dist", tauri::path::BaseDirectory::Resource)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| "/Applications/HarnessOS.app/Contents/Resources/web/dist".to_string());
+            log::info!("WEB_DIST_PATH = {web_dist_path}");
+
             cmd = cmd
                 .env("PORT", SERVER_PORT.to_string())
                 .env("HOSTNAME", "127.0.0.1")
                 .env("NODE_ENV", "production")
-                .env("LOG_LEVEL", "info");
+                .env("LOG_LEVEL", "info")
+                .env("WEB_DIST_PATH", web_dist_path);
             // DATABASE_URL: prefer a user-set env (set by the Tauri command
             // if/when we add a config screen), fall back to the default
             // remote DB. Default is the same Postgres the Easypanel
