@@ -1,8 +1,8 @@
 import { useState, type ReactElement } from 'react';
-import { GitBranch, GitCommit, RotateCcw, Send } from 'lucide-react';
+import { GitBranch, GitCommit, RotateCcw } from 'lucide-react';
 import { invalidate, useEntity } from '../store/cache';
 import { K } from '../store/keys';
-import { getGitLog, publishBranch, revertLastCommit, type GitLogResult } from '../skills/gitLog';
+import { getGitLog, revertLastCommit, type GitLogResult } from '../skills/gitLog';
 
 interface GitTurboStripProps {
   codebaseId: string;
@@ -31,7 +31,6 @@ function relativeTime(seconds: number): string {
 export function GitTurboStrip({ codebaseId }: GitTurboStripProps): ReactElement {
   const [confirmRevert, setConfirmRevert] = useState(false);
   const [revertPending, setRevertPending] = useState(false);
-  const [publishPending, setPublishPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const { data, loading, error, refetch } = useEntity<GitLogResult>(
@@ -57,24 +56,11 @@ export function GitTurboStrip({ codebaseId }: GitTurboStripProps): ReactElement 
     }
   };
 
-  const onPublish = async (): Promise<void> => {
-    setPublishPending(true);
-    setActionError(null);
-    try {
-      await publishBranch(codebaseId);
-      refetch();
-    } catch (err) {
-      setActionError((err as Error).message);
-    } finally {
-      setPublishPending(false);
-    }
-  };
-
   // Defensive: if the user navigates away mid-confirm, reset.
   invalidate(K.gitLog(codebaseId));
 
   const top = data?.commits[0];
-  const busy = revertPending || publishPending;
+  const busy = revertPending;
 
   return (
     <div className="mx-2 rounded-md border border-border bg-surface-elevated/40 px-2 py-1.5 text-[11px]">
@@ -115,7 +101,7 @@ export function GitTurboStrip({ codebaseId }: GitTurboStripProps): ReactElement 
           }}
           disabled={busy || !top}
           title={confirmRevert ? 'Clique de novo pra confirmar' : 'Reverter último commit'}
-          className={`flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 transition-colors ${
+          className={`flex w-full items-center justify-center gap-1 rounded px-1.5 py-1 transition-colors ${
             confirmRevert
               ? 'bg-error text-error-foreground hover:bg-error/90'
               : 'bg-surface-elevated text-text-secondary hover:bg-surface-elevated/70'
@@ -123,18 +109,6 @@ export function GitTurboStrip({ codebaseId }: GitTurboStripProps): ReactElement 
         >
           <RotateCcw aria-hidden className="h-3 w-3" />
           <span>{revertPending ? '…' : confirmRevert ? 'Confirma?' : 'Reverter'}</span>
-        </button>
-        <button
-          type="button"
-          onClick={(): void => {
-            void onPublish();
-          }}
-          disabled={busy}
-          title="git push --set-upstream origin HEAD"
-          className={`flex flex-1 items-center justify-center gap-1 rounded px-1.5 py-1 transition-colors bg-primary text-primary-foreground hover:bg-accent-hover ${busy ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          <Send aria-hidden className="h-3 w-3" />
-          <span>{publishPending ? '…' : 'Publicar'}</span>
         </button>
       </div>
 

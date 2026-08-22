@@ -318,18 +318,20 @@ pub fn run() {
             };
             log::info!("Server sidecar spawned, waiting for /health…");
 
-            // Block setup() (and the window open) until the server is up.
-            // Worst case: 30s timeout, then the user sees a blank webview
-            // (we surface the error in logs).
+            // Block setup() (and the window open) until the server is up. We
+            // use `block_on` here because Postgres init + schema-apply can
+            // take 5-10s on a cold start; if the webview opens before the
+            // server is listening it sees a 404 and never recovers. Worst
+            // case: 30s timeout, then the user sees a blank webview (we
+            // surface the error in logs via the banner below).
             let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
+            tauri::async_runtime::block_on(async move {
                 match wait_for_server(SERVER_PORT, 30).await {
                     Ok(()) => {
                         log::info!("Server ready on http://localhost:{SERVER_PORT}");
                     }
                     Err(e) => {
                         log::error!("Server not ready: {e}");
-                        // Bring the main window to front + show a banner.
                         if let Some(win) = app_handle.get_webview_window("main") {
                             let _ = win.eval(
                                 "document.body.insertAdjacentHTML('beforeend', \

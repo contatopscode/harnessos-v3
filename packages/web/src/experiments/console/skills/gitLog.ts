@@ -28,12 +28,3 @@ export function revertLastCommit(
     { method: 'POST' }
   );
 }
-
-export function publishBranch(
-  codebaseId: string
-): Promise<{ branch: string; remote: string; ref: string }> {
-  return requestJson<{ branch: string; remote: string; ref: string }>(
-    `/api/codebases/${encodeURIComponent(codebaseId)}/git-publish`,
-    { method: 'POST' }
-  );
-}

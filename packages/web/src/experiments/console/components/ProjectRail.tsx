@@ -15,7 +15,6 @@ import { ProjectRow } from './ProjectRow';
 import { EnvVarsDialog } from './EnvVarsDialog';
 import { InstallSkillsDialog } from './InstallSkillsDialog';
 import { GitTurboStrip } from './GitTurboStrip';
-import { SandboxStrip } from './SandboxStrip';
 import { useEntity, invalidate } from '../store/cache';
 import { K } from '../store/keys';
 import * as skill from '../skills';
@@ -327,7 +326,6 @@ export function ProjectRail({ onAddProject }: ProjectRailProps): ReactElement {
       {!allSelected && (
         <div className="flex flex-col gap-2 px-0 pb-2">
           <GitTurboStrip codebaseId={scope} />
-          <SandboxStrip codebaseId={scope} />
         </div>
       )}
 

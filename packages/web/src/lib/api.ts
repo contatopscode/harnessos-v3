@@ -517,15 +517,6 @@ export async function revertCodebaseLastCommit(
   );
 }
 
-export async function publishCodebase(
-  codebaseId: string
-): Promise<{ branch: string; remote: string; ref: string }> {
-  return fetchJSON<{ branch: string; remote: string; ref: string }>(
-    `/api/codebases/${encodeURIComponent(codebaseId)}/git-publish`,
-    { method: 'POST' }
-  );
-}
-
 // System
 export async function getHealth(): Promise<HealthResponse> {
   return fetchJSON<HealthResponse>('/api/health');

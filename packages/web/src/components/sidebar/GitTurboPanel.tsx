@@ -1,11 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  getCodebaseGitLog,
-  publishCodebase,
-  revertCodebaseLastCommit,
-  type GitLogResult,
-} from '@/lib/api';
+import { getCodebaseGitLog, revertCodebaseLastCommit, type GitLogResult } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 interface GitTurboPanelProps {
@@ -25,8 +20,11 @@ function relativeTime(seconds: number): string {
 /**
  * Sidebar card for the "Git Turbo" workflow (legacy UI). Shows the most
  * recent commit (subject + relative time + branch) and gives one-click
- * access to revert the last commit and publish the current branch to
- * origin.
+ * access to revert the last commit.
+ *
+ * The "Publicar" (git push) action was removed in Aug 2026 — users now
+ * open PRs via the terminal after the Tauri Desktop app removed the
+ * VPS-deploy pain that motivated the original in-app push.
  *
  * The Console (new UI) renders the compact variant in ProjectRail instead.
  */
@@ -49,16 +47,8 @@ export function GitTurboPanel({ codebaseId }: GitTurboPanelProps): React.ReactEl
     },
   });
 
-  const publish = useMutation({
-    mutationFn: (): Promise<{ branch: string; remote: string; ref: string }> =>
-      publishCodebase(codebaseId),
-    onSuccess: (): void => {
-      void queryClient.invalidateQueries({ queryKey: ['git-log', { codebaseId }] });
-    },
-  });
-
   const top = data?.commits[0];
-  const busy = revert.isPending || publish.isPending;
+  const busy = revert.isPending;
 
   return (
     <div className="rounded-md border border-border bg-surface-elevated/40 px-2 py-2 text-xs">
@@ -105,7 +95,7 @@ export function GitTurboPanel({ codebaseId }: GitTurboPanelProps): React.ReactEl
           }}
           disabled={busy || !top}
           className={cn(
-            'flex-1 rounded px-2 py-1 text-[11px] font-medium transition-colors',
+            'w-full rounded px-2 py-1 text-[11px] font-medium transition-colors',
             confirmRevert
               ? 'bg-error text-error-foreground hover:bg-error/90'
               : 'bg-surface-elevated text-text-secondary hover:bg-surface-elevated/70',
@@ -118,25 +108,8 @@ export function GitTurboPanel({ codebaseId }: GitTurboPanelProps): React.ReactEl
               ? 'Confirm revert?'
               : 'Reverter último commit'}
         </button>
-        <button
-          onClick={(): void => {
-            publish.mutate();
-          }}
-          disabled={busy}
-          className={cn(
-            'flex-1 rounded px-2 py-1 text-[11px] font-medium transition-colors',
-            'bg-primary text-primary-foreground hover:bg-accent-hover',
-            busy && 'opacity-50 cursor-not-allowed'
-          )}
-        >
-          {publish.isPending ? 'Publishing…' : 'Publicar'}
-        </button>
       </div>
-      {(revert.error || publish.error) && (
-        <p className="mt-1.5 text-[10px] text-error">
-          {revert.error?.message ?? publish.error?.message}
-        </p>
-      )}
+      {revert.error && <p className="mt-1.5 text-[10px] text-error">{revert.error.message}</p>}
     </div>
   );
 }

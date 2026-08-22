@@ -8,18 +8,11 @@ import {
   formatBytes,
   isAcceptedFileType,
 } from '../primitives/file';
-import { SandboxBadge } from './SandboxBadge';
 
 interface ChatComposerProps {
   onSend: (message: string, files?: File[]) => void;
   disabled: boolean;
   disabledReason?: string;
-  /** Active conversation id — used by the SandboxBadge to read/write the
-   *  conversation's sandbox state. Pass `null` to hide the badge. */
-  conversationId?: string | null;
-  /** Codebase id of the active project — gates the sandbox badge UI on
-   *  project-scoped chats only. Unscoped chats show no badge. */
-  codebaseId?: string | null;
 }
 
 const MAX_HEIGHT = 200;
@@ -46,8 +39,6 @@ export function ChatComposer({
   onSend,
   disabled,
   disabledReason,
-  conversationId,
-  codebaseId,
 }: ChatComposerProps): ReactElement {
   const [value, setValue] = useState('');
   const [files, setFiles] = useState<PickedFile[]>([]);
@@ -127,9 +118,6 @@ export function ChatComposer({
       title={disabledReason}
     >
       <div className="mx-auto max-w-[940px]">
-        {conversationId !== undefined && conversationId !== null && (
-          <SandboxBadge conversationId={conversationId} codebaseId={codebaseId ?? null} />
-        )}
         {files.length > 0 ? (
           <div className="mb-[10px] flex flex-wrap gap-[6px]">
             {files.map(f => (

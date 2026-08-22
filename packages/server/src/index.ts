@@ -961,6 +961,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<void> {
     const pathModule = await import('path');
     const webDistPath =
       opts.webDistPath ??
+      process.env.WEB_DIST_PATH ?? // set by HarnessOS Desktop Tauri shell (lib.rs) when spawning the sidecar
       pathModule.join(pathModule.dirname(pathModule.dirname(import.meta.dir)), 'web', 'dist');
 
     if (!existsSync(webDistPath)) {
