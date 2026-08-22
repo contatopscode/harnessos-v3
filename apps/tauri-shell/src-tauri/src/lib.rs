@@ -304,6 +304,40 @@ pub fn run() {
                 );
             }
 
+            // Better Auth env vars. Without these the sidecar's
+            // isWebAuthEnabled() returns false and every Console route
+            // that goes through requireWebPermission() 503s with
+            // "Web auth is not enabled on this install" — which is what
+            // broke the Demandas / Gestão de Usuários / Audit Log pages
+            // on 2026-08-22. The Tauri local app shares the same Postgres
+            // and the same Better Auth signing key as the Easypanel
+            // deployment, so propagating the same fallbacks keeps the
+            // two installs in lockstep. (PR-2: prefer user-set envs in
+            // a future config screen; today the dev who built the app
+            // baked the values in for offline / first-run.)
+            cmd = cmd.env(
+                "BETTER_AUTH_SECRET",
+                std::env::var("BETTER_AUTH_SECRET").unwrap_or_else(|_| {
+                    "AGotCV7FEj0cmnxEBHNbNLG7L6rp3cKmNBHpLeSp9XH9TWABzOacoahmOh5giuoL".to_string()
+                }),
+            );
+            cmd = cmd.env(
+                "BETTER_AUTH_URL",
+                std::env::var("BETTER_AUTH_URL").unwrap_or_else(|_| {
+                    "https://harness-os.pscode.ia.br".to_string()
+                }),
+            );
+            cmd = cmd.env(
+                "BETTER_AUTH_TRUSTED_ORIGINS",
+                std::env::var("BETTER_AUTH_TRUSTED_ORIGINS").unwrap_or_else(|_| {
+                    "https://harness-os.pscode.ia.br,http://localhost:5180,https://forge.pscode.ia.br".to_string()
+                }),
+            );
+            cmd = cmd.env(
+                "ARCHON_WEB_AUTH_REQUIRED",
+                std::env::var("ARCHON_WEB_AUTH_REQUIRED").unwrap_or_else(|_| "false".to_string()),
+            );
+
             // Sidecar side effects (writing its child into the AppHandle so
             // we can kill it on app exit). Tauri auto-kills sidecars on
             // shutdown, but we hold a CommandChild anyway for diagnostics.
