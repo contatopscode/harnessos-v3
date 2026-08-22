@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { useParams } from 'react-router';
+import { Plus, MessageSquare } from 'lucide-react';
 import { ChatStream } from '../components/ChatStream';
 import { ChatComposer } from '../components/ChatComposer';
 import { ProjectViewTabs } from '../components/ProjectViewTabs';
@@ -230,6 +231,58 @@ export function ChatPage(): ReactElement {
   // leave stale/empty data with no signal. Send errors take precedence.
   const loadError = messagesError ?? conversationsError;
 
+  // "Nova conversa" — start a fresh chat thread for this project. The flow:
+  //   1. If there's an active conversation, send `/reset` to deactivate the
+  //      agent's session (so context truly resets — the old thread stays in
+  //      the DB but loses its assistant_session_id and accumulated state).
+  //   2. Create a new empty conversation via POST /api/conversations (no
+  //      message — the first user prompt on the new thread will populate it).
+  //   3. Switch activeConvId + invalidate caches.
+  //
+  // Errors are surfaced inline (the same `error` channel as send failures) so
+  // the user can see what went wrong and retry. The button is disabled while
+  // `busy` to avoid stepping on an in-flight turn.
+  const [resetting, setResetting] = useState(false);
+  const startNewConversation = useCallback(async (): Promise<void> => {
+    if (projectId === undefined) return;
+    if (busy) return;
+    setError(null);
+    setResetting(true);
+    const previousConvId = activeConvId;
+    try {
+      if (previousConvId !== null) {
+        // Best-effort: a failed reset still leaves us able to create a new
+        // conversation, but we surface the error so the user knows the old
+        // session wasn't cleanly deactivated.
+        try {
+          await skill.resetConversation(previousConvId);
+        } catch (e: unknown) {
+          setError(
+            `Reset failed (old session may still be active): ${e instanceof Error ? e.message : 'unknown'}`
+          );
+        }
+      }
+      const conv = await skill.createConversation(projectId);
+      setActiveConvId(conv.conversationId);
+      // Drop the old message cache so a future "back to that thread" reload
+      // (when multi-conversation is added) starts clean. Invalidate the
+      // conversation list so the sidebar refreshes.
+      if (previousConvId !== null) invalidate(K.messages(previousConvId));
+      invalidate(K.conversations(projectId));
+      invalidate(K.messages(conv.conversationId));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Failed to start a new conversation.');
+    } finally {
+      setResetting(false);
+    }
+  }, [activeConvId, busy, projectId]);
+
+  // Turn count + total message count derived from the loaded history. Local
+  // metric (no SSE needed): a "turn" is one user message, and we cap at the
+  // last 200/500 messages the API hands back, so very long threads undercount
+  // — acceptable for the "is this thread getting long?" nudge.
+  const turnCount = useMemo(() => messageList.filter(m => m.role === 'user').length, [messageList]);
+
   // Current activity for the working indicator: the latest tool the agent
   // invoked in the in-flight turn (walk back to the last user message).
   const currentActivity = useMemo<string | null>(() => {
@@ -252,8 +305,34 @@ export function ChatPage(): ReactElement {
             <h1 className="truncate text-base font-medium text-text-primary">
               {project?.name ?? 'Project'}
             </h1>
-            <p className="text-xs text-text-tertiary">{project?.path ?? 'Loading…'}</p>
+            <p className="text-xs text-text-tertiary">
+              {project?.path ?? 'Loading…'}
+              {turnCount > 0 ? (
+                <>
+                  {' · '}
+                  <span
+                    className="font-mono text-text-tertiary"
+                    title="Number of user turns in this thread (one turn = one user message)"
+                  >
+                    {turnCount} {turnCount === 1 ? 'turn' : 'turns'}
+                  </span>
+                </>
+              ) : null}
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              void startNewConversation();
+            }}
+            disabled={busy || resetting || projectId === undefined}
+            title="Start a fresh conversation. The old thread stays in the database, but its AI session is reset so context doesn't carry over."
+            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border bg-surface-elevated px-2.5 py-1.5 text-[11.5px] font-medium text-text-secondary transition-colors hover:border-border-bright hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <MessageSquare aria-hidden className="h-3.5 w-3.5" />
+            <Plus aria-hidden className="-ml-1 h-3 w-3" />
+            <span>{resetting ? 'Resetting…' : 'Nova conversa'}</span>
+          </button>
         </div>
         <ProjectViewTabs projectId={projectId} active="chat" />
       </header>

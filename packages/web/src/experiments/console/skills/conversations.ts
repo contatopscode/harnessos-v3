@@ -45,6 +45,22 @@ export async function listConversations(projectId: string): Promise<Conversation
   return raw.map(toConversationSummary);
 }
 
+/**
+ * Reset the AI session for a conversation without creating a new one.
+ * Sends the `/reset` slash command, which the orchestrator treats as a
+ * deterministic transition: deactivates the active session so the next
+ * user message starts fresh (no `assistant_session_id` carryover).
+ *
+ * Used by "Nova conversa" before creating a new conversation — the old
+ * thread stays in the DB, but its context window is wiped so re-opening
+ * it later won't drag stale memory into the new chat.
+ *
+ * No-op if there's no active conversation or no active session.
+ */
+export async function resetConversation(conversationPlatformId: string): Promise<void> {
+  await sendMessage(conversationPlatformId, '/reset');
+}
+
 export async function sendMessage(
   conversationPlatformId: string,
   message: string,
