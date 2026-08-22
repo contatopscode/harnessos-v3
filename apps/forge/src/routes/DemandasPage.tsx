@@ -1,6 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Demand, type Client, type ProjectSummary, ApiError } from '../lib/api';
-import { Loader2, Plus, Search, Activity, History, Filter, X, AlertCircle, Play } from 'lucide-react';
+import {
+  Loader2,
+  Plus,
+  Search,
+  Activity,
+  History,
+  Filter,
+  X,
+  AlertCircle,
+  Play,
+} from 'lucide-react';
 import { useState } from 'react';
 import type { JSX } from 'react';
 import { cn } from '../lib/cn';
@@ -65,6 +75,13 @@ export function DemandasPage(): JSX.Element {
         clientId: clientId || undefined,
         codebaseId: codebaseId || undefined,
       }),
+    // Dynamic kanban: poll every 3s so cards visibly move between
+    // columns as workflow runs progress (started → completed →
+    // failed → blocked). React Query auto-pauses when the tab is
+    // hidden, so this doesn't hammer the server when the user is
+    // away. 3s is a balance between "feels live" and server load
+    // (each tick is one COUNT + one grouped SELECT — cheap).
+    refetchInterval: 3000,
   });
 
   const filtersActive = clientId !== '' || codebaseId !== '' || search !== '';

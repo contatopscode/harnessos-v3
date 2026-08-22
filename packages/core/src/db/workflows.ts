@@ -293,6 +293,10 @@ export async function createWorkflowRun(data: {
     // FORGE audit-trail: if the run is linked to a demand, log a
     // 'run_started' activity so the kanban timeline shows the run
     // from the moment it's created, not only when it completes.
+    // Also fire the dynamic-kanban auto-advance hook so the card
+    // visibly moves from backlog/triagem/requisitos/bloqueada to
+    // 'em_andamento' the moment work actually starts (forward-only —
+    // never re-opens 'concluido' / 'cancelado' / 'aprovacao_cliente').
     // Best-effort: never throw out of this hook.
     if (run.demand_id) {
       try {
@@ -315,6 +319,16 @@ export async function createWorkflowRun(data: {
           'db.workflow_run_run_started_activity_failed'
         );
       }
+      // Auto-advance: move the card to 'em_andamento' the moment a
+      // run is created (vs. waiting for completion — which could
+      // take minutes). See moveDemandOnRunStarted for the state
+      // machine.
+      await moveDemandOnRunStarted(run.id).catch(hookErr => {
+        getLog().warn(
+          { err: (hookErr as Error).message, runId: run.id, demandId: run.demand_id },
+          'db.workflow_run_run_started_demand_move_failed'
+        );
+      });
       // Also bump denormalized counters on the demand.
       try {
         const { recordAuditLog } = await import('./audit-log');
@@ -1391,12 +1405,65 @@ export async function deleteWorkflowRun(id: string): Promise<void> {
 }
 
 /**
+ * Auto-move hook: when a workflow run starts, check if it's linked to
+ * a demand and move the card to 'em_andamento' so the kanban reflects
+ * "work is happening right now" — no need to wait until completion
+ * (which can take minutes for long workflows).
+ *
+ * Forward-only: only advances from earlier stages or un-blocks
+ * 'bloqueada'. Never overrides terminal states ('concluido',
+ * 'cancelado') and respects 'aprovacao_cliente' (work may be
+ * running but the human approval gate is the bottleneck).
+ *
+ * Companion to moveDemandFromRun (which handles the terminal
+ * outcomes) — together they make the FORGE kanban truly dynamic.
+ */
+async function moveDemandOnRunStarted(runId: string): Promise<void> {
+  // Look up the demand_id from the run
+  const runRow = await pool.query<{ demand_id: string | null }>(
+    'SELECT demand_id FROM remote_agent_workflow_runs WHERE id = $1',
+    [runId]
+  );
+  const demandId = runRow.rows[0]?.demand_id;
+  if (!demandId) return; // run not linked to any demand — no-op
+
+  const { changeDemandStatus } = await import('./demand-activities');
+  const current = await pool.query<{ status: string }>(
+    'SELECT status FROM remote_agent_demands WHERE id = $1',
+    [demandId]
+  );
+  const currentStatus = current.rows[0]?.status;
+  if (!currentStatus) return;
+
+  if (
+    currentStatus === 'backlog' ||
+    currentStatus === 'triagem' ||
+    currentStatus === 'requisitos' ||
+    currentStatus === 'bloqueada'
+  ) {
+    await changeDemandStatus({
+      demandId,
+      toStatus: 'em_andamento',
+      source: 'auto_run_started',
+      note: 'Avançado automaticamente: run iniciado',
+    });
+  }
+  // else: stay where it is (aprovacao_cliente, em_andamento, concluido,
+  // cancelado). Forward-only, never re-opens a finished demand.
+}
+
+/**
  * Auto-move hook: when a workflow run finishes (success or failure),
  * check if it's linked to a demand and:
  *   1. Log a 'run_completed' / 'run_failed' activity (with run_id link)
- *   2. If the run succeeded, advance the demand to 'em_andamento'
- *      (unless it was already in 'aprovacao_cliente' or further along)
+ *   2. If the run succeeded:
+ *      - from backlog/triagem/requisitos → em_andamento
+ *        (run completed before demand entered the work column)
+ *      - from em_andamento/bloqueada → concluido
+ *        (the work the run was doing is now done — close it out)
  *   3. If the run failed, set the demand to 'bloqueada'
+ *      (unless the demand is already in a terminal state — never
+ *      re-open 'concluido' or 'cancelado' from a stale failure)
  *
  * Single source of truth for "this demand is blocked because run X
  * failed" — the user sees the red badge in the kanban and the full
@@ -1427,13 +1494,16 @@ async function moveDemandFromRun(
     metadata: { source: 'auto_workflow_run', outcome },
   });
 
+  // Read current status once — used by both branches below.
+  const current = await pool.query<{ status: string }>(
+    'SELECT status FROM remote_agent_demands WHERE id = $1',
+    [demandId]
+  );
+  const currentStatus = current.rows[0]?.status;
+  if (!currentStatus) return;
+
   if (outcome === 'completed') {
-    // Only advance from earlier stages; never move a demand BACKWARD
-    const current = await pool.query<{ status: string }>(
-      'SELECT status FROM remote_agent_demands WHERE id = $1',
-      [demandId]
-    );
-    const currentStatus = current.rows[0]?.status;
+    // Only advance forward; never move a demand BACKWARD.
     if (
       currentStatus === 'backlog' ||
       currentStatus === 'triagem' ||
@@ -1445,14 +1515,30 @@ async function moveDemandFromRun(
         source: 'auto_run_success',
         note: 'Avançado automaticamente: run concluído com sucesso',
       });
+    } else if (currentStatus === 'em_andamento' || currentStatus === 'bloqueada') {
+      // The run was doing the actual implementation work and finished
+      // cleanly — close the demand out. 'bloqueada' here means a new
+      // run was fired to unblock a previously-failed demand and it
+      // succeeded; that counts as done.
+      await changeDemandStatus({
+        demandId,
+        toStatus: 'concluido',
+        source: 'auto_run_success',
+        note: 'Avançado automaticamente: implementação concluída com sucesso',
+      });
     }
+    // else: stay (aprovacao_cliente, concluido, cancelado)
   } else {
-    // failed → bloqueada
-    await changeDemandStatus({
-      demandId,
-      toStatus: 'bloqueada',
-      source: 'auto_run_failed',
-      note,
-    });
+    // failed → bloqueada, but never overwrite a terminal state.
+    // (A late-failing run on a 'concluido' demand would otherwise
+    // resurrect it as 'bloqueada' — wrong.)
+    if (currentStatus !== 'concluido' && currentStatus !== 'cancelado') {
+      await changeDemandStatus({
+        demandId,
+        toStatus: 'bloqueada',
+        source: 'auto_run_failed',
+        note,
+      });
+    }
   }
 }
