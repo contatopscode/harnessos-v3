@@ -6,7 +6,7 @@
  * - Can answer directly or invoke workflows
  * - Does NOT require a project to be selected before starting a conversation
  */
-import { existsSync, realpathSync } from 'fs';
+import { existsSync, realpathSync, readdirSync, rmdirSync } from 'fs';
 import { createLogger, captureChatTurn, makeLogger } from '@archon/paths';
 import type {
   IPlatformAdapter,
@@ -19,6 +19,7 @@ import type { SendQueryOptions, TokenUsage } from '@archon/providers/types';
 import { ConversationNotFoundError, isWebAdapter } from '../types';
 import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
+import { ensureCodebaseCwdExists } from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import * as commandHandler from '../handlers/command-handler';
 import { formatToolCall } from '@archon/workflows/utils/tool-formatter';
@@ -407,6 +408,23 @@ function inferOwnerRepoFromCodebaseName(name: string): { owner: string; repo: st
 }
 
 /**
+ * Remove `path` if it exists AND is an empty directory. Used to pre-clear
+ * the placeholder directory that `ensureCodebaseCwdExists` creates for the
+ * worktree-enabled code path, so `ensureSource`'s anti-clobber guard
+ * accepts the path and runs the clone.
+ *
+ * Refuses to touch:
+ * - non-existent paths (no-op)
+ * - directories with any entries (the user owns those — we don't delete data)
+ */
+function clearEmptyDirIfPresent(path: string): void {
+  if (!existsSync(path)) return;
+  const entries = readdirSync(path);
+  if (entries.length > 0) return;
+  rmdirSync(path);
+}
+
+/**
  * Find a codebase by exact name or by last path segment (e.g., "repo" matches "owner/repo").
  * Case-insensitive. Used in both the parse phase and the dispatch phase.
  */
@@ -709,6 +727,55 @@ async function dispatchOrchestratorWorkflow(
   // and runs in the live checkout — no worktree creation, no env row. This is the
   // declarative equivalent of CLI `--no-worktree` for workflows that should always
   // run live (e.g. read-only triage, docs generation on the main checkout).
+  //
+  // `codebase.default_cwd` was already translated by the db layer
+  // (translateDefaultCwd), but the target directory may not exist yet on
+  // disk (the codebase was registered on a different host and never cloned
+  // here). mkdir -p so downstream `git fetch`/`git clone` doesn't fail
+  // with "No such file or directory" on the parent.
+  ensureCodebaseCwdExists(codebase.default_cwd);
+
+  // Self-healing source for the worktree-disabled path: if cwd is empty
+  // and we have a repository_url, clone before we let the agent touch the
+  // path. The worktree-enabled branch already does this inside
+  // syncWorkspaceBeforeCreate (orchestrator-agent.ts:1016) so it doesn't
+  // need the same hook here.
+  if (
+    workflow.worktree?.enabled === false &&
+    codebase.repository_url !== null &&
+    codebase.repository_url !== undefined
+  ) {
+    const inferred = inferOwnerRepoFromCodebaseName(codebase.name);
+    if (inferred !== null) {
+      try {
+        // ensureSource's anti-clobber guard rejects any pre-existing path
+        // (even an empty dir) as "not a git repository". `ensureCodebaseCwdExists`
+        // above just created that empty dir to keep the worktree-enabled path
+        // happy, so remove it here before cloning into the same path. Only
+        // nuke it if it's actually empty — anything with real content is left
+        // alone (the user can decide what to do).
+        await clearEmptyDirIfPresent(codebase.default_cwd);
+        await ensureSource({
+          owner: inferred.owner,
+          repo: inferred.repo,
+          // ensureSource builds `${baseDir}/${owner}/${repo}/source`, so
+          // baseDir must be the workspaces root, NOT `dirname(cwd)`.
+          // Passing `dirname(cwd)` would nest owner/repo twice and clone
+          // into a path the agent never looks at.
+          baseDir: getArchonWorkspacesPath(),
+          remoteUrl: codebase.repository_url,
+        });
+      } catch (err) {
+        getLog().warn(
+          { err: err as Error, codebaseId: codebase.id, path: codebase.default_cwd },
+          'orchestrator.source_recover_failed'
+        );
+        // Continue anyway — the agent will surface the real "not a git
+        // repository" error with the cwd it ended up at.
+      }
+    }
+  }
+
   let cwd: string;
   if (workflow.worktree?.enabled === false) {
     getLog().info(

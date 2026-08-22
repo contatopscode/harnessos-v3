@@ -2,6 +2,8 @@
  * Database operations for codebases
  */
 import { sep as pathSep } from 'path';
+import { homedir } from 'os';
+import { mkdirSync } from 'fs';
 import { pool, getDialect } from './connection';
 import type { Codebase } from '../types';
 import { createLogger, captureCodebaseRegistered } from '@archon/paths';
@@ -11,6 +13,51 @@ let cachedLog: ReturnType<typeof createLogger> | undefined;
 function getLog(): ReturnType<typeof createLogger> {
   if (!cachedLog) cachedLog = createLogger('db.codebases');
   return cachedLog;
+}
+
+/**
+ * Cross-platform default_cwd translation. When a codebase was registered on
+ * a Linux host (Easypanel) its `default_cwd` is a Linux path like
+ * `/home/appuser/.archon/workspaces/owner/repo/source`. That path doesn't
+ * exist on a Mac, so any `git -C <cwd> …` invocation fails immediately.
+ *
+ * On a Mac, rewrite the well-known Linux prefixes to the macOS `$HOME`:
+ *   /home/<user>/…  → $HOME/…
+ *   /root/…         → $HOME/…
+ * Paths that already look native (start with `/Users/…` on Mac, or any
+ * absolute path on Linux) pass through unchanged.
+ *
+ * No-op on non-darwin platforms so production Linux servers (Easypanel,
+ * Tauri Linux later) keep their native paths.
+ */
+export function translateDefaultCwd(cwd: string): string {
+  if (process.platform !== 'darwin') return cwd;
+  // /home/<anything>/... and /root/... are Linux patterns. Everything else
+  // (including Mac's /Users/..., /tmp, /var) passes through.
+  if (!cwd.startsWith('/home/') && !cwd.startsWith('/root/')) return cwd;
+  const home = process.env.HOME ?? homedir();
+  const stripped = cwd.replace(/^\/(home|root)\/[^/]+/, '');
+  const translated = home + stripped;
+  getLog().debug({ original: cwd, translated }, 'db.codebase_cwd_translated');
+  return translated;
+}
+
+/**
+ * Ensure a translated `default_cwd` exists on disk (mkdir -p). The Linux
+ * path we just rewrote points somewhere we haven't actually cloned to yet,
+ * so the directory is empty/missing. Worktree creation does a `git clone`
+ * into that path, so the parent must exist.
+ *
+ * Best-effort: a mkdir failure is logged but does not throw — the
+ * downstream `git fetch`/`git clone` will surface the real error to the
+ * user with full context.
+ */
+export function ensureCodebaseCwdExists(cwd: string): void {
+  try {
+    mkdirSync(cwd, { recursive: true });
+  } catch (err) {
+    getLog().warn({ cwd, err: err as Error }, 'db.codebase_cwd_mkdir_failed');
+  }
 }
 
 export async function createCodebase(data: {
@@ -47,7 +94,10 @@ export async function getCodebase(id: string): Promise<Codebase | null> {
   const result = await pool.query<Codebase>('SELECT * FROM remote_agent_codebases WHERE id = $1', [
     id,
   ]);
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  row.default_cwd = translateDefaultCwd(row.default_cwd);
+  return row;
 }
 
 export async function updateCodebaseCommands(
@@ -102,7 +152,10 @@ export async function findCodebaseByRepoUrl(repoUrl: string): Promise<Codebase |
     'SELECT * FROM remote_agent_codebases WHERE repository_url = $1',
     [repoUrl]
   );
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  row.default_cwd = translateDefaultCwd(row.default_cwd);
+  return row;
 }
 
 export async function findCodebaseByDefaultCwd(defaultCwd: string): Promise<Codebase | null> {
@@ -110,7 +163,10 @@ export async function findCodebaseByDefaultCwd(defaultCwd: string): Promise<Code
     'SELECT * FROM remote_agent_codebases WHERE default_cwd = $1 ORDER BY created_at DESC LIMIT 1',
     [defaultCwd]
   );
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  row.default_cwd = translateDefaultCwd(row.default_cwd);
+  return row;
 }
 
 /**
@@ -129,9 +185,13 @@ export async function findCodebaseByPathPrefix(cwdPath: string): Promise<Codebas
   const result = await pool.query<Codebase>('SELECT * FROM remote_agent_codebases');
   let best: Codebase | null = null;
   for (const row of result.rows) {
-    const base = row.default_cwd;
+    const base = translateDefaultCwd(row.default_cwd);
     const isMatch = cwdPath === base || cwdPath.startsWith(base + pathSep);
     if (isMatch && (best === null || base.length > best.default_cwd.length)) {
+      // Persist the translation back onto the row so downstream callers
+      // (orchestrator, command-handler) see the macOS path, not the stored
+      // Linux one. Mutates in place since the row came from this loop.
+      row.default_cwd = base;
       best = row;
     }
   }
@@ -143,7 +203,10 @@ export async function findCodebaseByName(name: string): Promise<Codebase | null>
     'SELECT * FROM remote_agent_codebases WHERE name = $1 ORDER BY created_at DESC LIMIT 1',
     [name]
   );
-  return result.rows[0] || null;
+  const row = result.rows[0];
+  if (row === undefined) return null;
+  row.default_cwd = translateDefaultCwd(row.default_cwd);
+  return row;
 }
 
 /**
@@ -200,7 +263,13 @@ export async function listCodebases(): Promise<readonly Codebase[]> {
   const result = await pool.query<Codebase>(
     'SELECT * FROM remote_agent_codebases ORDER BY name ASC'
   );
-  return result.rows;
+  // Translate Linux `default_cwd` to the host's native path (no-op on
+  // non-darwin). Each row is shallow-spread so we don't mutate the
+  // caller's reference frame and so the read looks immutable.
+  return result.rows.map(row => ({
+    ...row,
+    default_cwd: translateDefaultCwd(row.default_cwd),
+  }));
 }
 
 export async function deleteCodebase(id: string): Promise<void> {
