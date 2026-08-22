@@ -1,0 +1,408 @@
+name: archon-demand-analysis
+description: |
+  Use when: User has a demand/briefing and wants a technical specification
+            generated before any code is written.
+  Triggers: "analyze demand", "demand analysis", "write spec", "spec out",
+            "briefing to spec", "analyze and propose", "spec this demand",
+            "gerar especificação", "analisar demanda", "especificar demanda".
+  Does: Reads the briefing → explores the existing codebase for related
+        primitives → produces a verified spec at $ARTIFACTS_DIR/specs/{name}.spec.md
+        → STOPS before any implementation.
+  NOT for: Implementing a feature (use archon-feature-development or
+            archon-plan-to-pr), pure refactors (use archon-architect),
+            bug fixes (use archon-fix-github-issue), guided Q&A (use archon-assist).
+
+  Why this workflow exists:
+  - archon-interactive-prd is conversational (asks the user questions
+    between phases). Sometimes you have all the context you need and
+    just want a spec.
+  - archon-idea-to-pr goes all the way to a PR. Sometimes you want to
+    review the spec first and decide manually whether to proceed.
+  - This workflow sits between them: briefing + code analysis → spec,
+    no implementation, no questions, no PR.
+
+  Output: a single .spec.md file the user can read, edit, and then
+  feed to archon-plan-to-pr or archon-feature-development when ready.
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: GATHER — Collect raw codebase context deterministically
+  # Same metrics pattern as archon-architect so the spec-writer has
+  # verified numbers to cite, not vibes.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: gather-context
+    bash: |
+      echo "=== BRIEFING ==="
+      echo "$ARGUMENTS"
+      echo ""
+
+      echo "=== TOP-LEVEL STRUCTURE (top 20 dirs by file count) ==="
+      find . -type d \
+        -not -path '*/node_modules/*' \
+        -not -path '*/.git/*' \
+        -not -path '*/dist/*' \
+        -not -path '*/build/*' \
+        -not -path '*/.next/*' \
+        -not -path '*/.archon/*' \
+        -not -path '*/target/*' \
+        -not -path '*/.venv/*' \
+        -not -path '*/__pycache__/*' \
+        -mindepth 1 -maxdepth 3 \
+        2>/dev/null \
+        | xargs -I {} sh -c 'count=$(find "{}" -maxdepth 1 -type f 2>/dev/null | wc -l); echo "$count {}"' \
+        | sort -rn | head -20
+
+      echo ""
+      echo "=== LANGUAGE BREAKDOWN (by file extension, top 10) ==="
+      find . -type f \
+        -not -path '*/node_modules/*' \
+        -not -path '*/.git/*' \
+        -not -path '*/dist/*' \
+        -not -path '*/build/*' \
+        -not -path '*/.next/*' \
+        -not -path '*/.archon/*' \
+        -not -path '*/target/*' \
+        -not -path '*/.venv/*' \
+        -not -path '*/__pycache__/*' \
+        2>/dev/null \
+        | sed -n 's/.*\.\([a-zA-Z0-9]\+\)$/\1/p' \
+        | sort | uniq -c | sort -rn | head -10
+
+      echo ""
+      echo "=== KEY CONFIG FILES (presence check) ==="
+      for f in package.json bun.lock tsconfig.json Cargo.toml pyproject.toml go.mod pom.xml Gemfile composer.json pubspec.yaml README.md CLAUDE.md AGENTS.md docs/ARCHITECTURE.md; do
+        if [ -f "$f" ] || [ -d "$f" ]; then
+          echo "PRESENT: $f"
+        fi
+      done
+
+      echo ""
+      echo "=== ROUTE / HANDLER INVENTORY (top 30 by line count) ==="
+      find . -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.js' -o -name '*.jsx' -o -name '*.py' \) \
+        -not -path '*/node_modules/*' \
+        -not -path '*/.git/*' \
+        -not -path '*/dist/*' \
+        -not -path '*/build/*' \
+        2>/dev/null \
+        | xargs wc -l 2>/dev/null \
+        | sort -rn | head -30
+
+      echo ""
+      echo "=== RECENT ACTIVITY (last 10 commits) ==="
+      git log --oneline -10 2>/dev/null || echo "Not a git repo"
+    timeout: 60000
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: ANALYZE — Read the briefing, explore the codebase,
+  # and identify the existing primitives relevant to the demand.
+  # Output is structured notes for the spec-writer (Phase 3).
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: analyze
+    model: large
+    context: fresh
+    prompt: |
+      You are a senior engineer producing the ANALYSIS section of a technical
+      specification. You do NOT write the spec yet — you gather evidence and
+      synthesize a structured report that the next node will turn into a spec.
+
+      ## The Demand (briefing from the user)
+
+      $ARGUMENTS
+
+      ## Codebase Context (collected deterministically)
+
+      $gather-context.output
+
+      ## Your Task
+
+      1. **Restate the demand in 2-3 sentences** in your own words. If the briefing is
+         ambiguous, list the ambiguities explicitly — don't fill them in yourself.
+
+      2. **Explore the codebase** to find existing primitives that are relevant to this
+         demand. Use Read, Glob, and Grep. For every claim about existing code, cite the
+         file path and the relevant function/type/endpoint name.
+
+         Look for:
+         - Existing API endpoints or RPCs that already return related data
+         - Existing UI pages, components, or routes that already cover part of the demand
+         - Existing DB tables or schemas that store related entities
+         - Existing types, interfaces, or Zod schemas
+         - Existing patterns for similar features (auth, validation, error handling)
+         - Existing tests for the area (so the spec can require matching test style)
+
+      3. **Map the demand to existing primitives.** For each piece of the demand, ask:
+         - Is there an existing endpoint that already returns this? (extend, don't create)
+         - Is there an existing component that renders something similar? (extend, don't create)
+         - Is there an existing table where this data should live? (extend, don't create)
+
+      4. **Identify gaps.** What's truly new? What's missing in the current system that
+         the spec will need to propose?
+
+      5. **Flag risks and open questions.** What assumptions need validation? What could
+         break? What's the user-decision territory that the spec should surface (not decide)?
+
+      ## Output Format
+
+      Write your analysis as Markdown to stdout (the next node will read it from $analyze.output):
+
+      ```
+      # Analysis Report
+
+      ## Demand Restated
+      {2-3 sentence restatement. List ambiguities if any.}
+
+      ## What Already Exists (verified by reading code)
+      - **{category}**: `{file:line}` — {name/function/endpoint} — {what it does}
+      - ...
+
+      ## Existing Primitives We Can Extend
+      - **{area}**: extend `{file}` by {minimal change} → satisfies "{demand piece}"
+      - ...
+
+      ## Gaps (truly new)
+      - {gap 1}: {what's missing, what needs to be built}
+      - ...
+
+      ## Risks
+      - {risk 1}: {what could go wrong, what to validate}
+      - ...
+
+      ## Open Questions (for the user, surfaced in the spec)
+      - {question 1}
+      - ...
+      ```
+
+      Rules:
+      - Cite real file paths. If you can't find a primitive you expected to exist, say so.
+      - Don't write the spec here. Just the analysis. The next node does that.
+      - Don't write any code. This is a read-only analysis.
+    depends_on: [gather-context]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: WRITE SPEC — Produce the .spec.md file the user reviews.
+  # The workflow STOPS here. The user reads the spec, edits if
+  # needed, and then dispatches archon-plan-to-pr or
+  # archon-feature-development to actually implement it.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: write-spec
+    model: large
+    context: fresh
+    prompt: |
+      You are writing a technical specification from a verified analysis.
+      Your job: produce a single .spec.md file the user can read end-to-end
+      and then hand to an implementation workflow.
+
+      ## The Demand (briefing from the user)
+
+      $ARGUMENTS
+
+      ## Analysis Report (from previous node)
+
+      $analyze.output
+
+      ## Your Task
+
+      1. **Choose a kebab-case filename** for the spec based on the demand. Strip filler
+         words (a, the, for, of). Use 2-5 words. Examples: `rbac-user-importer`,
+         `billing-proration`, `multi-tenant-rls`, `demand-edit-inline`.
+
+      2. **Write the spec** to `$ARTIFACTS_DIR/specs/{your-kebab-name}.spec.md`.
+         Create the directory first if needed:
+         ```bash
+         mkdir -p $ARTIFACTS_DIR/specs
+         ```
+
+         **Required sections** (skip none — the validator checks for these):
+
+         1. **Demand** — restate the user's briefing in 2-3 sentences. Surface any
+            ambiguities the analysis flagged as open questions.
+
+         2. **Goals & Non-Goals** — what's in scope (must be true when done) and
+            what's explicitly out of scope. Be specific. "Improve UX" is not a goal.
+            "Add an inline edit modal on the demand card that lets the user set
+            `codebase_id` from a dropdown" is a goal.
+
+         3. **What Already Exists** — copy the relevant pieces from the analysis
+            report. List the file paths, function names, and endpoints we can extend
+            instead of creating new. This is the most important section for
+            keeping the implementation small.
+
+         4. **Proposed Solution** — high-level approach. 1-3 paragraphs. Explain the
+            shape, not the implementation.
+
+         5. **Technical Approach** — concrete changes broken down by file. For each
+            file, list: the file path, what to add or change, and which existing
+            primitive to extend. Cite real file paths from the analysis. If a new
+            endpoint/component/table is needed, justify WHY (existing primitive
+            doesn't fit because...).
+
+         6. **Data Model** — if the spec needs new DB tables/columns, list them with
+            name, type, nullable, and a 1-line description. If it just extends
+            existing tables, say which columns and the migration implications.
+            If no DB changes needed, write "No schema changes."
+
+         7. **API Surface** — if the spec needs new endpoints, list each one with
+            method, path, request shape, response shape, and which existing endpoint
+            (if any) it extends. If no new endpoints, write "No new endpoints."
+
+         8. **UI Surface** — if the spec touches the UI, list which existing pages/
+            components are affected and what changes. If new pages/components are
+            needed, list them with their route or file path.
+
+         9. **Implementation Phases** — break the work into 2-4 ordered phases. Each
+            phase should be a vertical slice (testable end-to-end), not a horizontal
+            layer (e.g., "Phase 1: model + API", not "Phase 1: do the database").
+            For each phase, list: the files touched, what becomes testable, and the
+            exit criterion (how you know this phase is done).
+
+         10. **Test Plan** — what tests need to exist when this is implemented. List
+             by file. For each, state what behavior is verified. Match the existing
+             test style of the codebase (don't introduce a new test framework).
+
+         11. **Risks & Open Questions** — copy from the analysis. These are the
+             things the user should decide before implementation starts.
+
+      3. **Output the file path** on its own line at the very end of your response.
+         Format: `SPEC_PATH: $ARTIFACTS_DIR/specs/{kebab-name}.spec.md`
+
+      Rules:
+      - Be concrete. File paths, function names, table names, column types. No
+        "etc.", no "and so on", no "various improvements".
+      - Prefer "extend X" over "create Y" everywhere. The validator checks this.
+      - If the analysis flagged open questions, surface them in section 11. Do NOT
+        decide them yourself unless the analysis already covered the trade-off.
+      - Don't write code. Specs describe intent; the implementation workflow
+        writes the code.
+      - Don't propose UI that wasn't in the demand unless it's a natural extension
+        (e.g., "the demand needs a button, the button needs a click handler, the
+        handler needs a confirmation modal"). If in doubt, surface as an open
+        question.
+    depends_on: [analyze]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: VALIDATE — Check that every file path, function name,
+  # and API endpoint in the spec actually exists in the codebase.
+  # Fix anything that doesn't. This is the same pattern as
+  # archon-interactive-prd's validate node — read-only checks
+  # against actual code.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    model: large
+    context: fresh
+    prompt: |
+      You are a technical validator. Your job is to catch every incorrect
+      reference in the spec before the user reads it. Be pedantic.
+
+      ## Spec to validate
+
+      The spec was written to: $write-spec.output
+
+      ## Your task
+
+      Read the spec file (use the path above). Then verify EVERY technical
+      claim against the actual codebase. Use Read, Glob, and Grep — do not
+      guess.
+
+      **Check 1: File paths** — For every file path in "Technical Approach",
+      "Data Model", "API Surface", "UI Surface", "Implementation Phases",
+      and "Test Plan", verify it exists. If it doesn't, either:
+      - Fix the typo if obvious
+      - Or add a note to Validation Notes: "MISSING: {path} — needs to be created"
+        if the spec is correctly proposing a new file
+
+      **Check 2: API endpoints** — For every endpoint mentioned, search
+      `packages/server/src/routes/api.ts` and any `api.*.ts` files for it. If
+      the spec says "extend /api/foo/bar" and that endpoint exists, confirm
+      the spec correctly describes what to extend. If the spec says "new
+      endpoint /api/foo/bar" but a similar endpoint already returns the
+      data, flag it: "Existing /api/... already returns {data} — consider
+      extending instead."
+
+      **Check 3: DB schemas** — For every table/column referenced, verify
+      against the latest migration in `packages/core/migrations/`. If a
+      column doesn't exist and isn't being added in the spec, flag it.
+
+      **Check 4: UI components** — For every component/page referenced,
+      verify it exists. If the spec proposes a new page, confirm the
+      proposed route doesn't collide with an existing one.
+
+      **Check 5: Function/type/constant names** — Verify every name you can
+      find in the spec against the actual code. Typos here will waste the
+      implementer's time.
+
+      **Check 6: "Extend X" claims** — For every line that says "extend
+      {file}", open that file and verify the extension makes sense (the
+      function/interface being extended actually exists, the schema being
+      extended has the column being added, etc).
+
+      **If you find ANY corrections needed:**
+      1. Edit the spec file directly to fix them
+      2. Add a `## Validation Notes` section at the bottom of the spec with
+         a list of every correction made
+
+      **If everything checks out**, add:
+      ```
+      ## Validation Notes
+
+      All technical references verified against codebase at {current date}.
+      No corrections needed. Spec is ready for the user to review.
+      ```
+
+      Then output a summary:
+
+      ```
+      ## Spec Validated
+
+      **File**: {spec-path}
+      **Checks**: {N} file paths, {N} endpoints, {N} DB references, {N} components
+      **Corrections**: {count}
+      {if corrections: list them}
+
+      **Next step for the user**: Review the spec, edit if needed, then dispatch
+      `archon-plan-to-pr` (or `archon-feature-development`) with the spec path
+      to start implementation.
+      ```
+    depends_on: [write-spec]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: SUMMARY — Final report for the user.
+  # This is the workflow's terminal node. The run completes here
+  # with status=completed. The user is expected to read the
+  # spec, edit it if needed, and then dispatch an implementation
+  # workflow themselves.
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: summary
+    model: small
+    context: fresh
+    allowed_tools: [Read]
+    prompt: |
+      You are generating the final summary of a demand-analysis run.
+      The user is about to read this — make it scannable.
+
+      Read the spec file: $write-spec.output
+
+      Also read the validation report at the bottom of the spec (the
+      `## Validation Notes` and `## Spec Validated` sections).
+
+      Generate a summary with:
+
+      1. **Spec location** (the file path the user should open)
+      2. **TL;DR** — 1-2 sentences: what the spec proposes
+      3. **Key existing primitives the spec will extend** — 3-5 bullets
+         with file paths. This is what makes the implementation small.
+      4. **Open questions for the user** — the things they need to decide
+         before implementation starts. Numbered list. If there are no
+         open questions, write "None — spec is ready to implement."
+      5. **Validation status** — pass / {N} corrections made
+      6. **Next step** — "Read {spec-path}. Edit if needed. When ready to
+         implement, dispatch `archon-plan-to-pr {spec-path}` (or
+         `archon-feature-development` if you have a plan file)."
+
+      Output the summary as your response. Keep it under 30 lines. The user
+      sees this directly in the chat.
+    depends_on: [validate]
