@@ -261,6 +261,7 @@ import {
 import { messageSchema } from './schemas/conversation.schemas';
 import { adminInvites, publicInvite } from './api.admin-invites';
 import rbac from './api.admin-rbac';
+import adminGitlab from './api.admin-gitlab';
 import forgeClients from './api-forge-clients';
 import forgeDemands from './api-forge-demands';
 import forgeSprints from './api-forge-sprints';
@@ -1933,6 +1934,11 @@ export function registerApiRoutes(
   // requireWebPermission('admin:users' | 'admin:roles') inside the
   // subapp. Mounted BEFORE the API gate for the same reason as adminInvites.
   app.route('/api/admin', rbac);
+  // GitLab integration admin endpoints (settings + test connection).
+  // Phase 1 only — read/write the org-level settings row and probe the
+  // connection. Phase 2 will add a non-admin /api/gitlab/issues route
+  // for the FORGE issue board.
+  app.route('/api/admin', adminGitlab);
 
   // ---- VOLUND FORGE — PMO surface (clients / demands / sprints / OS's / costs / projects) ----
   // Each subapp is mounted with its own path prefix so URLs stay readable

@@ -359,3 +359,26 @@ export {
   BUNDLED_MANAGE_RUN_SKILL_FILES,
   type InstallResult,
 } from './skills';
+
+// GitLab integration (Phase 1 — foundation). Used by the server-side
+// admin settings route and (Phase 2+) the issue board + sync worker.
+// Re-exports the GitLab client + settings store so callers depend on
+// one stable surface.
+export {
+  GitlabClient,
+  GitlabApiError,
+  type GitlabUser,
+  type GitlabProject,
+  type GitlabIssue,
+  type CreateIssueParams,
+  type UpdateIssueParams,
+  type ListIssuesParams,
+  type GitlabClientOptions,
+  getGitlabSettings,
+  saveGitlabSettings,
+  testGitlabConnection,
+  buildGitlabClient,
+  type GitlabSettingsView,
+  type SaveGitlabSettingsParams,
+  type TestGitlabConnectionResult,
+} from './gitlab';

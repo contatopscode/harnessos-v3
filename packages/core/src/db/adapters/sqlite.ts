@@ -860,6 +860,50 @@ export class SqliteAdapter implements IDatabase {
         ON remote_agent_user_direct_permissions(user_id);
       CREATE INDEX IF NOT EXISTS idx_user_direct_perms_permission
         ON remote_agent_user_direct_permissions(permission_id);
+
+      -- GitLab integration (migration 039): org-level singleton settings
+      -- + issue ↔ demand links. Schema mirrors 039_gitlab_integration.sql
+      -- with SQLite type swaps (UUID -> TEXT, BIGINT -> INTEGER,
+      -- TIMESTAMP WITH TIME ZONE -> TEXT). PR note: TEXT BOOLEAN is 0/1
+      -- per the SQLite convention used elsewhere in this schema.
+      CREATE TABLE IF NOT EXISTS remote_agent_gitlab_settings (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        gitlab_url TEXT NOT NULL,
+        access_token_encrypted TEXT NOT NULL,
+        project_filter TEXT,
+        sync_enabled INTEGER NOT NULL DEFAULT 0,
+        last_tested_at TEXT,
+        last_test_user TEXT,
+        last_test_status TEXT,
+        last_test_error TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      INSERT OR IGNORE INTO remote_agent_gitlab_settings
+        (id, gitlab_url, access_token_encrypted)
+      VALUES (1, 'https://gitlab.com', '');
+
+      CREATE TABLE IF NOT EXISTS remote_agent_gitlab_issue_links (
+        id TEXT PRIMARY KEY,
+        demand_id TEXT REFERENCES remote_agent_demands(id) ON DELETE SET NULL,
+        project_id INTEGER NOT NULL,
+        project_path TEXT NOT NULL,
+        issue_iid INTEGER NOT NULL,
+        last_direction TEXT NOT NULL DEFAULT 'synced',
+        last_synced_at TEXT,
+        last_synced_remote_updated_at TEXT,
+        last_synced_local_updated_at TEXT,
+        last_error TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(project_id, issue_iid)
+      );
+
+      CREATE INDEX IF NOT EXISTS gitlab_issue_links_demand_id_idx
+        ON remote_agent_gitlab_issue_links(demand_id);
+      CREATE INDEX IF NOT EXISTS gitlab_issue_links_project_iid_idx
+        ON remote_agent_gitlab_issue_links(project_id, issue_iid);
     `);
     getLog().info('db.sqlite_schema_initialized');
   }
